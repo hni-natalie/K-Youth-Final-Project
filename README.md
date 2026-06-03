@@ -257,7 +257,12 @@ backend/
 │   │   ├── __init__.py
 │   │   ├── connection.py          # get_db() ONLY
 │   │   ├── search.py              # search queries (tech, company, location, salary)
-│   │   └── stats.py              # aggregation queries (count, grouping, analytics)
+│   │   ├── company_stats.py       # company aggregation queries
+│   │   ├── location_stats.py      # location aggregation queries
+│   │   ├── role_stats.py          # role aggregation queries
+│   │   ├── trend_stats.py         # trend aggregation queries
+│   │   ├── tech_stack_stats.py    # tech stack aggregation queries
+│   │   └── salary_stats.py        # salary aggregation queries
 │
 ├── pipeline/
 │   ├── extract_html.py
@@ -267,10 +272,6 @@ backend/
 │   ├── extract_tech_stack.py
 │   ├── prompt_model.py
 │   └── load_data_into_db.py
-│
-├── schema/
-│   ├── stats_schema.py
-│   └── __init__.py
 │
 ├── utils/
 │   ├── error_handlers.py
