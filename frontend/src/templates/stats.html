@@ -572,8 +572,15 @@
       const salary = j.salary && j.salary.trim()
         ? `<span style="white-space:nowrap">${esc(j.salary)}</span>`
         : '<span style="color:var(--muted)">—</span>';
+      const titleCell = j.job_url
+        ? `<a href="${esc(j.job_url)}" target="_blank" rel="noopener noreferrer"
+              style="font-weight:500;color:var(--primary);text-decoration:none;"
+              onmouseover="this.style.textDecoration='underline'"
+              onmouseout="this.style.textDecoration='none'"
+            >${esc(j.title)}</a>`
+        : `<span style="font-weight:500">${esc(j.title)}</span>`;
       return `<tr>
-        <td style="font-weight:500">${esc(j.title)}</td>
+        <td>${titleCell}</td>
         <td>${esc(j.company)}</td>
         <td>${loc}</td>
         <td style="font-size:0.82rem">${salary}</td>

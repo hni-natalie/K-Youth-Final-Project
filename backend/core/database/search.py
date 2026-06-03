@@ -142,3 +142,27 @@ def get_jobs_by_salary(input_salary: float):
         
     except Exception as e:
         raise InternalServerError(f"Error searching jobs by salary: {str(e)}")
+
+
+def get_jobs_by_role(role: str):
+    """Return all jobs for a given role (used for analyze page)."""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT title, company, location, salary, tech_stack,
+                       actual_posted_date, job_url
+                FROM jobs
+                WHERE role = ?
+                """,
+                (role,),
+            )
+            jobs = cursor.fetchall()
+            job_list = [dict(job) for job in jobs]
+        return {
+            "message": f"Found {len(job_list)} jobs",
+            "data": {"total": len(job_list), "jobs": job_list},
+        }
+    except Exception as e:
+        raise InternalServerError(f"Error fetching jobs by role: {str(e)}")

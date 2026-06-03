@@ -75,14 +75,17 @@ export async function getRoles() {
 
 /**
  * Fetch distinct locations for the Location dropdown.
- * Returns a string array; the server falls back to a preset list if the
- * backend is unavailable.
+ * If role is provided, returns only locations that have jobs for that role.
+ * @param {string|null} role - optional role to filter locations
  * @returns {Promise<string[]>}
  */
-export async function getLocations() {
+export async function getLocations(role = null) {
+  const url = role
+    ? `/api/locations?role=${encodeURIComponent(role)}`
+    : '/api/locations';
   let response;
   try {
-    response = await fetch('/api/locations');
+    response = await fetch(url);
   } catch {
     throw new Error('Could not reach the server.');
   }

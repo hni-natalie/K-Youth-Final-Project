@@ -1,12 +1,13 @@
 # backend/api/routes/stats_routes.py
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from backend.core.database.search import (
     get_total_jobs,
     get_jobs_by_tech,
     get_jobs_by_company,
     get_jobs_by_salary,
     get_jobs_by_location,
-    get_all_jobs
+    get_all_jobs,
+    get_jobs_by_role,
 )
 
 router = APIRouter()
@@ -43,3 +44,8 @@ def read_jobs_by_salary(amount: float):
 def read_jobs_by_location(location: str):
     """Get all jobs from a specific location"""
     return get_jobs_by_location(location)
+
+@router.get("/jobs/by-role")
+def read_jobs_by_role(role: str = Query(...)):
+    """Get all jobs for a given role (for analyze page)"""
+    return get_jobs_by_role(role)

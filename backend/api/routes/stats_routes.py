@@ -1,6 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from backend.core.database.role_stats import get_roles, get_roles_with_stats
-from backend.core.database.location_stats import get_locations, get_locations_with_stats
+from backend.core.database.location_stats import get_locations, get_locations_with_stats, get_locations_by_role
 from backend.core.database.salary_stats import get_salary_stats
 from backend.core.database.company_stats import get_company_stats
 from backend.core.database.tech_stack_stats import get_tech_stack_stats
@@ -23,6 +23,10 @@ def read_locations():
 @router.get("/locations_count")
 def read_locations_count():
     return get_locations_with_stats()
+
+@router.get("/locations_by_role")
+def read_locations_by_role(role: str = Query(...)):
+    return get_locations_by_role(role)
 
 @router.get("/salary")
 def read_salary_stats():

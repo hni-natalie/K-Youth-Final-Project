@@ -457,6 +457,67 @@
       font-weight: 600;
       margin-bottom: 14px;
     }
+
+    /* ── Job listings ── */
+    .job-listings-section {
+      margin-top: 24px;
+    }
+    .job-cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 14px;
+      margin-top: 12px;
+    }
+    .job-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      background: var(--card);
+      transition: box-shadow .15s, border-color .15s;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .job-card:hover {
+      box-shadow: 0 4px 14px rgba(0,0,0,.08);
+      border-color: var(--primary);
+    }
+    .job-card-title {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .job-card-company {
+      font-size: .82rem;
+      color: var(--muted);
+    }
+    .job-card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      font-size: .78rem;
+      color: var(--muted);
+    }
+    .job-card-skills {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .btn-view-job {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 5px 14px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border-radius: 6px;
+      font-size: .8rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background .15s;
+      align-self: flex-start;
+    }
+    .btn-view-job:hover { background: var(--primary); color: #fff; }
   </style>
 </head>
 <body>
@@ -658,6 +719,21 @@
     </div><!-- /.results-panel -->
 
   </div><!-- /.layout-grid -->
+
+  <!-- ════════════ Job Listings (full-width, below grid) ════════════ -->
+  <div class="job-listings-section" id="jobListingsSection" style="display:none">
+    <div class="card">
+      <div class="card-title">📋 Matching Job Listings
+        <span style="font-weight:400;text-transform:none;font-size:.8rem;color:var(--muted);"
+              id="jobListingsSubtitle"></span>
+      </div>
+      <div class="job-cards-grid" id="jobCardsGrid"></div>
+      <div id="jobListingsEmpty"
+           style="display:none;font-size:.85rem;color:var(--muted);padding:12px 0;">
+        No job listings match your filters.
+      </div>
+    </div>
+  </div>
 </main><!-- /.main-wrapper -->
 
 <script type="module">
@@ -724,6 +800,22 @@
   }
 
   loadDropdowns();
+
+  // ── Reload locations when role changes ────────────────────────────────
+  roleSelect.addEventListener('change', async () => {
+    roleSelect.classList.remove('is-invalid');
+    const role = roleSelect.value;
+    if (!role) return;
+    locationSelect.innerHTML = '<option disabled selected>Loading\u2026</option>';
+    try {
+      const locs = await getLocations(role);
+      fillSelect(locationSelect, ['No preference', ...locs], 'Select a location\u2026');
+    } catch {
+      const fallback = await getLocations().catch(() => []);
+      fillSelect(locationSelect, ['No preference', ...fallback], 'Select a location\u2026');
+    }
+    locationSelect.value = 'No preference';
+  });
 
   // ── PDF upload badge ────────────────────────────────────────
   pdfInput.addEventListener('change', () => {
@@ -828,6 +920,56 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ── Job listings renderer ────────────────────────────────────────
+  function renderJobListings(jobs, role, location, salary) {
+    const section  = document.getElementById('jobListingsSection');
+    const grid     = document.getElementById('jobCardsGrid');
+    const empty    = document.getElementById('jobListingsEmpty');
+    const subtitle = document.getElementById('jobListingsSubtitle');
+
+    if (!jobs || !jobs.length) {
+      section.style.display = 'block';
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      subtitle.textContent = '';
+      return;
+    }
+
+    // Build subtitle
+    const parts = [];
+    if (location && location !== 'No preference') parts.push(location);
+    if (salary) parts.push(salary);
+    subtitle.textContent = jobs.length + ' result' + (jobs.length !== 1 ? 's' : '')
+      + (parts.length ? ' \u2022 ' + parts.join(' \u2022 ') : '');
+
+    empty.style.display = 'none';
+    grid.innerHTML = jobs.map(job => {
+      const skills = (job.tech_stack || '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 5);
+      const skillHtml = skills.map(s =>
+        `<span class="skill-tag tag-low">${escHtml(s)}</span>`
+      ).join('');
+      const salary   = job.salary && job.salary.toLowerCase() !== 'undisclosed' ? job.salary : null;
+      const posted   = job.actual_posted_date || '';
+      const viewBtn  = job.job_url
+        ? `<a href="${escHtml(job.job_url)}" target="_blank" rel="noopener noreferrer" class="btn-view-job">View Job →</a>`
+        : '';
+      return `
+        <div class="job-card">
+          <div class="job-card-title">${escHtml(job.title || '')}</div>
+          <div class="job-card-company">🏢 ${escHtml(job.company || '')}</div>
+          <div class="job-card-meta">
+            <span>📍 ${escHtml(job.location || '')}</span>
+            ${salary ? `<span>💰 ${escHtml(salary)}</span>` : ''}
+            ${posted ? `<span>📅 ${escHtml(posted)}</span>` : ''}
+          </div>
+          ${skillHtml ? `<div class="job-card-skills">${skillHtml}</div>` : ''}
+          ${viewBtn}
+        </div>`;
+    }).join('');
+
+    section.style.display = 'block';
+  }
+
   // ── Inline field validation ──────────────────────────────────
   function validateForm() {
     let valid = true;
@@ -838,7 +980,7 @@
     return valid;
   }
 
-  roleSelect.addEventListener('change',     () => roleSelect.classList.remove('is-invalid'));
+
   locationSelect.addEventListener('change', () => locationSelect.classList.remove('is-invalid'));
 
   // ── Form submit ──────────────────────────────────────────────
@@ -870,10 +1012,19 @@
       // Mock badge
       mockBadge.style.display = data._mock ? 'flex' : 'none';
 
+      // Job listings
+      renderJobListings(
+        data.job_listings ?? [],
+        form.querySelector('[name=target_role]').value,
+        form.querySelector('[name=location]').value,
+        data.expected_salary,
+      );
+
       showState('results');
 
     } catch (err) {
       errorMsg.textContent = err.message || 'Unexpected error. Please try again.';
+      document.getElementById('jobListingsSection').style.display = 'none';
       showState('error');
     } finally {
       analyzeBtn.disabled = false;

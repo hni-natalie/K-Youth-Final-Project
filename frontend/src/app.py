@@ -141,11 +141,19 @@ async def api_roles():
 
 
 @app.get("/api/locations")
-async def api_locations():
-    """Return distinct locations. Tries backend /api/stats/locations first; falls back to preset list."""
+async def api_locations(role: str | None = None):
+    """Return locations, optionally filtered to only those with jobs for the given role."""
     try:
-        def _get():
-            return httpx.get(f"{BACKEND_URL}/api/stats/locations", timeout=5.0)
+        if role:
+            def _get():
+                return httpx.get(
+                    f"{BACKEND_URL}/api/stats/locations_by_role",
+                    params={"role": role},
+                    timeout=10.0,
+                )
+        else:
+            def _get():
+                return httpx.get(f"{BACKEND_URL}/api/stats/locations", timeout=5.0)
         resp = await asyncio.to_thread(_get)
         if resp.status_code == 200:
             locations = resp.json().get("data", {}).get("locations", [])
@@ -208,26 +216,31 @@ def _build_analyze_prompt(
     target_role: str,
     location: str,
     user_skills: list[str],
-    top_market_skills: list[dict],
-    pdf_text: str = "",
+    matched_skills: list[str],
+    missing_skills: list[dict],
+    match_score: int,
+    total_jobs: int,
     expected_salary: str = "",
+    pdf_text: str = "",
 ) -> str:
-    market_str = ", ".join(s["skill"] for s in top_market_skills[:10])
-    skills_str = ", ".join(user_skills) if user_skills else "not specified"
-    resume_part = f"\n\nResume excerpt:\n{pdf_text[:800]}" if pdf_text else ""
-    salary_part = f"\nExpected Salary: {expected_salary}" if expected_salary else ""
+    skills_str   = ", ".join(user_skills)    if user_skills    else "not specified"
+    matched_str  = ", ".join(matched_skills) if matched_skills else "none"
+    missing_str  = ", ".join(s["skill"] for s in missing_skills[:5]) if missing_skills else "none"
+    resume_part  = f"\nResume excerpt:\n{pdf_text[:600]}" if pdf_text else ""
+    salary_part  = f"\nExpected Salary: {expected_salary}"    if expected_salary else ""
     return (
         "You are a career analyst for tech jobs in Malaysia. "
-        "Analyze the profile below and return ONLY valid JSON with NO markdown.\n\n"
+        "Based on the data below, provide specific career advice. "
+        "Return ONLY valid JSON with NO markdown.\n\n"
         f"Target Role: {target_role}\n"
-        f"Location: {location}\n"
+        f"Location: {location or 'No preference'}\n"
         f"User Skills: {skills_str}{resume_part}{salary_part}\n"
-        f"Top Market Skills: {market_str}\n\n"
+        f"Match Score: {match_score}% ({total_jobs} job postings analyzed)\n"
+        f"Matched Skills: {matched_str}\n"
+        f"Top Missing Skills: {missing_str}\n\n"
         "Return exactly this JSON (nothing else):\n"
-        '{"match_score": <0-100>, '
-        '"missing_skills": [{"skill": "<name>", "priority": "high|medium|low"}], '
-        '"ai_recommendation": "<2-3 sentences>", '
-        '"limitations": "<1-2 sentences>"}'
+        '{"ai_recommendation": "<2-3 sentences of specific actionable career advice>", '
+        '"limitations": "<1-2 sentences about what this analysis doesn\'t cover>"}'
     )
 
 
@@ -242,16 +255,83 @@ def _parse_ai_json(reply: str) -> dict:
         return {}
 
 
-def _compute_missing_skills(
-    user_skills: list[str], top_market_skills: list[dict]
-) -> list[dict]:
+def _compute_role_skills_analysis(
+    user_skills: list[str], top_role_skills: list[dict], pdf_text: str = ""
+) -> tuple[list[str], list[dict]]:
+    """Returns (matched_skills, missing_skills) based on role tech_stack from DB.
+    Checks both the manually entered skills list and the full PDF resume text."""
     user_lower = {s.lower() for s in user_skills}
-    result = []
-    for i, s in enumerate(top_market_skills):
-        if s["skill"].lower() not in user_lower:
-            priority = "high" if i < 3 else ("medium" if i < 6 else "low")
-            result.append({"skill": s["skill"], "priority": priority})
-    return result[:5]
+    pdf_lower = pdf_text.lower() if pdf_text else ""
+    matched: list[str] = []
+    missing: list[dict] = []
+    for i, item in enumerate(top_role_skills):
+        skill_name = item["skill"]
+        skill_lower = skill_name.lower()
+        in_skills_box = skill_lower in user_lower
+        in_pdf = bool(pdf_lower) and skill_lower in pdf_lower
+        if in_skills_box or in_pdf:
+            matched.append(skill_name)
+        else:
+            priority = "high" if i < 3 else ("medium" if i < 7 else "low")
+            missing.append({"skill": skill_name, "priority": priority})
+    return matched, missing
+
+
+_LOCATION_ALIASES: dict[str, list[str]] = {
+    "Kuala Lumpur": ["wp kuala lumpur", "kl city", "kuala lumpur"],
+    "Petaling Jaya": ["petaling jaya", "pj"],
+    "Shah Alam": ["shah alam"],
+    "Subang Jaya": ["subang jaya"],
+    "Puchong": ["puchong"],
+    "Gombak": ["gombak"],
+    "Skudai": ["skudai"],
+    "Senai": ["senai"],
+    "Johor Bahru": ["johor bahru", "jb"],
+    "Cyberjaya": ["cyberjaya"],
+    "Singapore": ["singapore"],
+    "Klang": ["klang"],
+    "Cheras": ["cheras"],
+}
+
+def _normalize_job_location(raw: str) -> str:
+    """Normalize a raw DB location string to its canonical dropdown name."""
+    lower = raw.lower().strip()
+    for canonical, aliases in _LOCATION_ALIASES.items():
+        if any(alias in lower for alias in aliases):
+            return canonical
+    return raw.strip()
+
+
+def _filter_jobs_by_location_salary(
+    jobs: list[dict], location: str, salary_pref: str
+) -> list[dict]:
+    """Filter a list of job dicts by location and salary preference."""
+    result = jobs
+    # Location filter — normalize job location before comparing
+    if location and location.lower() != "no preference":
+        result = [
+            j for j in result
+            if _normalize_job_location(j.get("location") or "") == location
+        ]
+    # Salary filter — extract numeric bounds and compare
+    if salary_pref and salary_pref.lower() != "no preference":
+        nums = [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]+", salary_pref)]
+        if nums:
+            pref_min = min(nums)
+            pref_max = max(nums) if len(nums) > 1 else None
+            filtered = []
+            for j in result:
+                job_sal = (j.get("salary") or "").replace(",", "")
+                job_nums = [int(n) for n in re.findall(r"\d+", job_sal) if int(n) > 500]
+                if not job_nums:           # undisclosed — include
+                    filtered.append(j)
+                    continue
+                job_max = max(job_nums)
+                job_min = min(job_nums)
+                if job_max >= pref_min and (pref_max is None or job_min <= pref_max):
+                    filtered.append(j)
+            result = filtered
+    return result
 
 
 @app.post("/analyze")
@@ -277,98 +357,88 @@ async def analyze(
                 status_code=400,
             )
 
-    # 2. Parse user skills (fall back to PDF text if no skills typed)
+    # 2. Parse user skills
     user_skills = [s.strip() for s in current_skills.split(",") if s.strip()]
 
-    # 3. Fetch market stats and total job count from backend (in parallel)
-    stats_data: dict | None = None
-    total_jobs: int = 0
+    # 3. Fetch ALL jobs for this role from backend
+    raw_jobs: list[dict] = []
     try:
-        def _get_stats():
-            return httpx.get(f"{BACKEND_URL}/api/stats/tech_stack", timeout=30.0)
-        def _get_roles_count():
-            return httpx.get(f"{BACKEND_URL}/api/stats/roles_count", timeout=15.0)
-
-        stats_resp, roles_resp = await asyncio.gather(
-            asyncio.to_thread(_get_stats),
-            asyncio.to_thread(_get_roles_count),
-            return_exceptions=True,
-        )
-        if not isinstance(stats_resp, Exception) and stats_resp.status_code == 200:
-            body = stats_resp.json()
-            if not body.get("error"):
-                stats_data = body
-        if not isinstance(roles_resp, Exception) and roles_resp.status_code == 200:
-            roles_list = roles_resp.json().get("data", {}).get("roles", [])
-            total_jobs = sum(int(r.get("count", 0)) for r in roles_list)
+        def _get_role_jobs():
+            return httpx.get(
+                f"{BACKEND_URL}/api/search/jobs/by-role",
+                params={"role": target_role},
+                timeout=15.0,
+            )
+        jobs_resp = await asyncio.to_thread(_get_role_jobs)
+        if jobs_resp.status_code == 200:
+            raw_jobs = jobs_resp.json().get("data", {}).get("jobs", [])
     except Exception:
         pass
 
-    # 4. Build top market skills list
-    if stats_data:
-        top_skills_raw: dict = stats_data.get("data", {}).get("top_skills", {})
-        top_market_skills = [
-            {"skill": k, "count": v} for k, v in list(top_skills_raw.items())[:10]
-        ]
-    else:
-        top_market_skills = _MOCK_TOP_SKILLS
-    if not total_jobs:
-        total_jobs = 148
+    # 4. Total jobs for this role (before any filtering)
+    total_jobs = len(raw_jobs)
 
-    # 5. Compute matched skills and a simple fallback score
-    market_names_lower = {s["skill"].lower() for s in top_market_skills}
-    matched_skills = [s for s in user_skills if s.lower() in market_names_lower]
-    if user_skills:
-        simple_score = min(100, round(len(matched_skills) / len(user_skills) * 100))
-    else:
-        simple_score = 0
+    # 5. Compute top role skills from the fetched jobs (no AI needed)
+    from collections import Counter as _Counter
+    skill_counter: _Counter = _Counter()
+    for job in raw_jobs:
+        for skill in (job.get("tech_stack") or "").split(","):
+            skill = skill.strip()
+            if skill:
+                skill_counter[skill] += 1
+    top_role_skills: list[dict] = [
+        {"skill": k, "count": v} for k, v in skill_counter.most_common(15)
+    ]
+    if not top_role_skills:
+        top_role_skills = _MOCK_TOP_SKILLS
 
-    # 6. Get AI analysis (only when backend is reachable)
-    ai_result: dict = {}
-    if stats_data:
+    # 6. Compute matched / missing skills from DB role data (text box + PDF)
+    matched_skills, missing_skills = _compute_role_skills_analysis(user_skills, top_role_skills, pdf_text)
+
+    # 7. Match score = matched / (matched + missing) * 100
+    total_skill_count = len(matched_skills) + len(missing_skills)
+    match_score = round(len(matched_skills) / total_skill_count * 100) if total_skill_count else 0
+
+    # 8. Filter job listings by location + salary for the listings section
+    job_listings = _filter_jobs_by_location_salary(raw_jobs, location, expected_salary)
+
+    # 9. Ask AI only for recommendation text (skills + score already computed from DB)
+    ai_recommendation = ""
+    limitations = "Analysis based on available job listings in the database."
+    try:
         prompt = _build_analyze_prompt(
-            target_role, location, user_skills, top_market_skills, pdf_text, expected_salary
+            target_role, location, user_skills, matched_skills, missing_skills,
+            match_score, total_jobs, expected_salary, pdf_text,
         )
-        try:
-            def _post_chat():
-                return httpx.post(
-                    f"{BACKEND_URL}/analyze",
-                    json={"message": prompt, "pdf_text": ""},
-                    timeout=120.0,
-                )
-
-            chat_resp = await asyncio.to_thread(_post_chat)
-            if chat_resp.status_code == 200:
-                ai_result = _parse_ai_json(chat_resp.json().get("reply", ""))
-        except Exception:
-            pass
-
-    # 7. Assemble final response
-    match_score = int(ai_result.get("match_score") or simple_score)
-    missing_skills = ai_result.get("missing_skills") or _compute_missing_skills(
-        user_skills, top_market_skills
-    )
-    ai_recommendation = ai_result.get("ai_recommendation", "")
-    limitations = ai_result.get(
-        "limitations",
-        "Analysis based on available Jobstreet Malaysia job listings.",
-    )
+        def _post_chat():
+            return httpx.post(
+                f"{BACKEND_URL}/analyze",
+                json={"message": prompt, "pdf_text": ""},
+                timeout=120.0,
+            )
+        chat_resp = await asyncio.to_thread(_post_chat)
+        if chat_resp.status_code == 200:
+            ai_json = _parse_ai_json(chat_resp.json().get("reply", ""))
+            ai_recommendation = ai_json.get("ai_recommendation", "")
+            limitations = ai_json.get("limitations", limitations)
+    except Exception:
+        pass
 
     if not ai_recommendation:
         ai_recommendation = (
-            "AI recommendation unavailable — the backend may still be loading. "
-            "Please retry in a moment."
+            "AI recommendation unavailable — please retry in a moment."
         )
-        limitations += " AI analysis was not available for this request."
 
     return JSONResponse({
-        "match_score": match_score,
-        "total_jobs": total_jobs,
-        "top_market_skills": top_market_skills,
-        "matched_skills": matched_skills,
-        "missing_skills": missing_skills,
+        "match_score":      match_score,
+        "total_jobs":       total_jobs,
+        "top_market_skills": top_role_skills[:10],
+        "matched_skills":   matched_skills,
+        "missing_skills":   missing_skills,
         "ai_recommendation": ai_recommendation,
-        "limitations": limitations,
-        "expected_salary": expected_salary or None,
-        "_mock": not bool(stats_data),
+        "limitations":      limitations,
+        "job_listings":     job_listings,
+        "expected_salary":  expected_salary or None,
+        "_mock":            not bool(raw_jobs),
     })
+

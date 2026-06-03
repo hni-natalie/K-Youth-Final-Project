@@ -79,3 +79,24 @@ def get_locations_with_stats():
 
     except Exception as e:
         raise InternalServerError(f"Failed to fetch location stats: {str(e)}")
+
+
+def get_locations_by_role(role: str):
+    """Return distinct normalized locations for jobs with the given role."""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT location FROM jobs WHERE role = ? AND location IS NOT NULL",
+                (role,),
+            )
+            rows = cursor.fetchall()
+        if not rows:
+            return {"message": "No locations found", "data": {"locations": []}}
+        normalized = {normalize_location(row["location"]) for row in rows}
+        return {
+            "message": "Locations retrieved successfully",
+            "data": {"locations": sorted(normalized)},
+        }
+    except Exception as e:
+        raise InternalServerError(f"Failed to fetch locations by role: {str(e)}")
