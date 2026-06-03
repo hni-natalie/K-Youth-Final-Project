@@ -244,15 +244,40 @@ Analyzed Job 26498274: Python, PyTorch, 3D Computer Vision
 
 ```plaintext
 backend/
+├── api/
+│   ├── main.py                      # FastAPI entry point
+│   ├── routes/
+│   │   ├── search_routes.py
+│   │   ├── stats_routes.py
+│   │   └── __init__.py
+│
+├── core/
+│   ├── config.py                   # Settings (DB_PATH, API keys)
+│   ├── database/
+│   │   ├── __init__.py
+│   │   ├── connection.py          # get_db() ONLY
+│   │   ├── search.py              # search queries (tech, company, location, salary)
+│   │   └── stats.py              # aggregation queries (count, grouping, analytics)
+│
 ├── pipeline/
-│   ├── extract_html.py          # Fetch HTML
-│   ├── extract_job_data.py      # Filter tech jobs
-│   ├── extract_job_details.py   # Extract full job info
-│   ├── extract_tech_stack.py    # Extract tech stack from job desc
-│   ├── fetch_job_desc.py        # Resend request to extract job desc
-│   ├── load_data_into_db.py     # Save data into SQLite
-│   ├── prompt_model.py          # Prompt LLM
-|
+│   ├── extract_html.py
+│   ├── fetch_job_desc.py
+│   ├── extract_job_data.py
+│   ├── extract_job_details.py
+│   ├── extract_tech_stack.py
+│   ├── prompt_model.py
+│   └── load_data_into_db.py
+│
+├── schema/
+│   ├── stats_schema.py
+│   └── __init__.py
+│
+├── utils/
+│   ├── error_handlers.py
+│   └── __init__.py
+│
+├── pyproject.toml
+└── uv.lock
 │
 data/
 ├── job_sources/                 # Raw HTML pages
