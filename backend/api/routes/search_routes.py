@@ -5,7 +5,8 @@ from backend.core.database.search import (
     get_jobs_by_tech,
     get_jobs_by_company,
     get_jobs_by_salary,
-    get_jobs_by_location
+    get_jobs_by_location,
+    get_all_jobs
 )
 
 router = APIRouter()
@@ -14,6 +15,11 @@ router = APIRouter()
 @router.get("/total-jobs")
 def read_total_jobs():
     return get_total_jobs()
+
+
+@router.get("/all-jobs")
+def read_all_jobs():
+    return get_all_jobs()
 
 
 @router.get("/jobs/by-tech/{tech}")
