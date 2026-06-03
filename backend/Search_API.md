@@ -1,4 +1,4 @@
-# 📘 Job Market API Documentation
+# 📘 Job Market Search API Documentation
 
 Base URL:
 

@@ -1,4 +1,4 @@
-from backend.utils.error_handlers import DatabaseError, InternalServerError
+from backend.utils.error_handlers import InternalServerError
 from backend.core.database.connection import get_db
 
 def get_total_jobs():
@@ -8,7 +8,7 @@ def get_total_jobs():
             cursor.execute("SELECT COUNT(*) as count FROM jobs")
             result = cursor.fetchone()
             if result is None:
-                raise DatabaseError("No data returned from database")
+                raise InternalServerError("No data returned from database")
 
             return {
                 "message": "Total jobs retrieved",
