@@ -504,6 +504,7 @@
             </label>
             <select class="form-select" id="expectedSalary" name="expected_salary">
               <option value="">No preference</option>
+              <option>MYR 2,000 – 3,000</option>
               <option>MYR 3,000 – 5,000</option>
               <option>MYR 5,000 – 8,000</option>
               <option>MYR 8,000 – 12,000</option>
@@ -717,11 +718,9 @@
       rolesResult.status === 'fulfilled' ? rolesResult.value : [],
       'Select a role\u2026',
     );
-    fillSelect(
-      locationSelect,
-      locationsResult.status === 'fulfilled' ? locationsResult.value : [],
-      'Select a location\u2026',
-    );
+    const locationItems = locationsResult.status === 'fulfilled' ? locationsResult.value : [];
+    fillSelect(locationSelect, ['No preference', ...locationItems], 'Select a location\u2026');
+    locationSelect.value = 'No preference';
   }
 
   loadDropdowns();
@@ -834,10 +833,6 @@
     let valid = true;
     if (!roleSelect.value) {
       roleSelect.classList.add('is-invalid');
-      valid = false;
-    }
-    if (!locationSelect.value) {
-      locationSelect.classList.add('is-invalid');
       valid = false;
     }
     return valid;

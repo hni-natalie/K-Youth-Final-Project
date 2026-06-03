@@ -4,7 +4,7 @@ from backend.utils.error_handlers import InternalServerError
 from backend.core.database.connection import get_db
 from backend.pipeline.prompt_model import prompt_model
 
-MODEL_NAME = "gemini-3.1-flash-lite"
+MODEL_NAME = "gemini-2.5-flash"
 
 
 def fetch_job_titles() -> list[str]:

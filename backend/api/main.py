@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from backend.api.routes import search_routes, stats_routes
+from backend.api.routes import search_routes, stats_routes, analyze_routes
 from backend.core.config import settings
 from backend.utils.error_handlers import DatabaseError, InternalServerError
 
@@ -21,6 +21,7 @@ app.add_middleware(
 
 app.include_router(search_routes.router, prefix="/api/search", tags=["Search"])
 app.include_router(stats_routes.router, prefix="/api/stats", tags=["Stats"])
+app.include_router(analyze_routes.router, prefix="/analyze", tags=["Analyze"])
 
 
 # GLOBAL ERROR HANDLERS

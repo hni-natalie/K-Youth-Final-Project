@@ -42,87 +42,114 @@ async def stats_page(request: Request):
     return templates.TemplateResponse("stats.html", {"request": request})
 
 
-@app.post("/chat")
-async def chat(
-    message: Annotated[str, Form()] = "",
-    pdf: Annotated[UploadFile | None, File()] = None,
-):
-    pdf_text = ""
-    if pdf and pdf.filename:
-        contents = await pdf.read()
-        if len(contents) > MAX_PDF_BYTES:
-            return JSONResponse({"reply": "PDF too large (max 10 MB)."}, status_code=413)
-        try:
-            pdf_text = _extract_pdf_text(contents)
-        except Exception as exc:
-            return JSONResponse(
-                {"reply": f"Could not read the PDF ({type(exc).__name__}). "
-                           "Please ensure it is a valid, non-corrupted PDF file."},
-                status_code=400,
-            )
-
-    if not message.strip() and not pdf_text.strip():
-        return JSONResponse(
-            {"reply": "Please type a message or upload a PDF resume."},
-            status_code=400,
-        )
-
-    payload = {"message": message, "pdf_text": pdf_text}
-    try:
-        def _post():
-            return httpx.post(f"{BACKEND_URL}/chat", json=payload, timeout=120.0)
-        resp = await asyncio.to_thread(_post)
-        try:
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
-        except Exception:
-            return JSONResponse(
-                {"reply": "Backend returned an unexpected response. Please try again."},
-                status_code=502,
-            )
-    except Exception as exc:
-        return JSONResponse({"reply": f"Backend is not available. ({type(exc).__name__}: {exc})"}, status_code=503)
-
-
 @app.get("/api/stats")
 async def api_stats():
-    try:
-        def _get():
-            return httpx.get(f"{BACKEND_URL}/stats", timeout=10.0)
-        resp = await asyncio.to_thread(_get)
+    """Aggregate stats from multiple backend endpoints into one response for the dashboard."""
+
+    def _safe_get(resp, *path, default):
+        """Return nested data from an httpx response; return default on any error or non-200."""
         try:
-            return JSONResponse(content=resp.json(), status_code=resp.status_code)
+            if isinstance(resp, Exception) or resp.status_code != 200:
+                return default
+            data = resp.json()
+            for key in path:
+                data = data[key]
+            return data
         except Exception:
-            return JSONResponse(
-                {"error": "Backend returned an unexpected response."},
-                status_code=502,
-            )
+            return default
+
+    try:
+        def _get_tech():
+            return httpx.get(f"{BACKEND_URL}/api/stats/tech_stack", timeout=30.0)
+        def _get_locations():
+            return httpx.get(f"{BACKEND_URL}/api/stats/locations_count", timeout=10.0)
+        def _get_roles():
+            return httpx.get(f"{BACKEND_URL}/api/stats/roles_count", timeout=30.0)
+        def _get_jobs():
+            return httpx.get(f"{BACKEND_URL}/api/search/all-jobs", timeout=10.0)
+        def _get_companies():
+            return httpx.get(f"{BACKEND_URL}/api/stats/company", timeout=10.0)
+
+        # return_exceptions=True: a timeout in one endpoint won't cancel the others
+        tech_resp, loc_resp, roles_resp, jobs_resp, comp_resp = await asyncio.gather(
+            asyncio.to_thread(_get_tech),
+            asyncio.to_thread(_get_locations),
+            asyncio.to_thread(_get_roles),
+            asyncio.to_thread(_get_jobs),
+            asyncio.to_thread(_get_companies),
+            return_exceptions=True,
+        )
+
+        tech_stack     = _safe_get(tech_resp,  "data", "top_skills",  default={})
+        locations_list = _safe_get(loc_resp,   "data", "locations",   default=[])
+        roles_list     = _safe_get(roles_resp, "data", "roles",       default=[])
+        raw_jobs       = _safe_get(jobs_resp,  "data", "jobs",        default=[])
+        companies_list = _safe_get(comp_resp,  "data", "companies",   default=[])
+
+        # Transform each job: split comma-separated tech_stack string into a skills array
+        jobs = []
+        for job in raw_jobs:
+            j = dict(job)
+            tech_stack_str = j.pop("tech_stack", "") or ""
+            j["skills"] = [s.strip() for s in tech_stack_str.split(",") if s.strip()]
+            jobs.append(j)
+
+        # Company stats are already sorted by count desc; take top 10 for the chart
+        top_companies = companies_list[:10]
+
+        return JSONResponse({
+            "top_skills": tech_stack,
+            "location_distribution": {item["location"]: item["count"] for item in locations_list},
+            "company_distribution": {item["company"]: item["count"] for item in top_companies},
+            "total_companies": len(companies_list),
+            "job_type_distribution": {item["role"]: item["count"] for item in roles_list},
+            "jobs": jobs,
+        })
     except Exception as exc:
         return JSONResponse({"error": f"Backend is not available. ({type(exc).__name__}: {exc})"}, status_code=503)
 
 
 @app.get("/api/roles")
 async def api_roles():
-    """Return distinct job roles. Tries backend /roles first; falls back to preset list."""
+    """Return AI-classified role categories from roles_count; falls back to raw DB titles, then preset list."""
+    # 1. Try AI-classified roles (pretty grouped names, ~20-35s)
     try:
-        def _get():
-            return httpx.get(f"{BACKEND_URL}/roles", timeout=5.0)
-        resp = await asyncio.to_thread(_get)
+        def _get_classified():
+            return httpx.get(f"{BACKEND_URL}/api/stats/roles_count", timeout=90.0)
+        resp = await asyncio.to_thread(_get_classified)
         if resp.status_code == 200:
-            return JSONResponse(content=resp.json(), status_code=200)
+            roles_data = resp.json().get("data", {}).get("roles", [])
+            roles = [r["role"] for r in roles_data if r.get("role")]
+            if roles:
+                return JSONResponse({"roles": roles})
     except Exception:
         pass
-    return JSONResponse({"roles": _MOCK_ROLES, "_fallback": True})
+    # 2. Fallback: raw distinct titles from DB (no AI, instant)
+    try:
+        def _get_raw():
+            return httpx.get(f"{BACKEND_URL}/api/search/all-jobs", timeout=15.0)
+        resp = await asyncio.to_thread(_get_raw)
+        if resp.status_code == 200:
+            jobs = resp.json().get("data", {}).get("jobs", [])
+            roles = sorted({j["title"] for j in jobs if j.get("title")})
+            if roles:
+                return JSONResponse({"roles": roles, "_fallback": "raw_titles"})
+    except Exception:
+        pass
+    # 3. Last resort: hardcoded mock roles
+    return JSONResponse({"roles": _MOCK_ROLES, "_fallback": "mock"})
 
 
 @app.get("/api/locations")
 async def api_locations():
-    """Return distinct locations. Tries backend /locations first; falls back to preset list."""
+    """Return distinct locations. Tries backend /api/stats/locations first; falls back to preset list."""
     try:
         def _get():
-            return httpx.get(f"{BACKEND_URL}/locations", timeout=5.0)
+            return httpx.get(f"{BACKEND_URL}/api/stats/locations", timeout=5.0)
         resp = await asyncio.to_thread(_get)
         if resp.status_code == 200:
-            return JSONResponse(content=resp.json(), status_code=200)
+            locations = resp.json().get("data", {}).get("locations", [])
+            return JSONResponse({"locations": locations})
     except Exception:
         pass
     return JSONResponse({"locations": _MOCK_LOCATIONS, "_fallback": True})
@@ -253,29 +280,39 @@ async def analyze(
     # 2. Parse user skills (fall back to PDF text if no skills typed)
     user_skills = [s.strip() for s in current_skills.split(",") if s.strip()]
 
-    # 3. Fetch market stats from backend
+    # 3. Fetch market stats and total job count from backend (in parallel)
     stats_data: dict | None = None
+    total_jobs: int = 0
     try:
         def _get_stats():
-            return httpx.get(f"{BACKEND_URL}/stats", timeout=10.0)
+            return httpx.get(f"{BACKEND_URL}/api/stats/tech_stack", timeout=30.0)
+        def _get_roles_count():
+            return httpx.get(f"{BACKEND_URL}/api/stats/roles_count", timeout=15.0)
 
-        stats_resp = await asyncio.to_thread(_get_stats)
-        if stats_resp.status_code == 200:
+        stats_resp, roles_resp = await asyncio.gather(
+            asyncio.to_thread(_get_stats),
+            asyncio.to_thread(_get_roles_count),
+            return_exceptions=True,
+        )
+        if not isinstance(stats_resp, Exception) and stats_resp.status_code == 200:
             body = stats_resp.json()
             if not body.get("error"):
                 stats_data = body
+        if not isinstance(roles_resp, Exception) and roles_resp.status_code == 200:
+            roles_list = roles_resp.json().get("data", {}).get("roles", [])
+            total_jobs = sum(int(r.get("count", 0)) for r in roles_list)
     except Exception:
         pass
 
-    # 4. Build top market skills and total jobs count
+    # 4. Build top market skills list
     if stats_data:
-        top_skills_raw: dict = stats_data.get("top_skills", {})
+        top_skills_raw: dict = stats_data.get("data", {}).get("top_skills", {})
         top_market_skills = [
             {"skill": k, "count": v} for k, v in list(top_skills_raw.items())[:10]
         ]
-        total_jobs = max(top_skills_raw.values(), default=0) if top_skills_raw else 0
     else:
         top_market_skills = _MOCK_TOP_SKILLS
+    if not total_jobs:
         total_jobs = 148
 
     # 5. Compute matched skills and a simple fallback score
@@ -295,7 +332,7 @@ async def analyze(
         try:
             def _post_chat():
                 return httpx.post(
-                    f"{BACKEND_URL}/chat",
+                    f"{BACKEND_URL}/analyze",
                     json={"message": prompt, "pdf_text": ""},
                     timeout=120.0,
                 )

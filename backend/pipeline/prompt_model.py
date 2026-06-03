@@ -1,8 +1,11 @@
+import logging
 import os
 import sys
 import requests
 from google import genai
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 def prompt_gemini(model: str, prompt: str) -> str:
     """
@@ -11,8 +14,11 @@ def prompt_gemini(model: str, prompt: str) -> str:
     
     try:
         load_dotenv()
-        
-        api_key = os.getenv("GEMINI_API_KEY")
+
+        api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("No Gemini API key found (GOOGLE_API_KEY / GEMINI_API_KEY)")
+
         client = genai.Client(api_key=api_key)
 
         response = client.models.generate_content(
@@ -23,6 +29,7 @@ def prompt_gemini(model: str, prompt: str) -> str:
         return response.text
 
     except Exception as e:
+        logger.error("Gemini model %s failed: %s", model, e, exc_info=True)
         return f"[Gemini Error] {str(e)}"
     
 
@@ -49,6 +56,7 @@ def prompt_ollama(model: str, prompt: str) -> str:
         return data.get("response", "[No response field returned]")
 
     except Exception as e:
+        logger.error("Ollama model %s failed: %s", model, e, exc_info=True)
         return f"[Ollama Error] {str(e)}"
 
 

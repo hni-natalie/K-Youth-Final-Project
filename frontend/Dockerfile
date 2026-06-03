@@ -1,8 +1,8 @@
-FROM python:3.14.4-bookworm
+FROM python:3.14-slim
 
 WORKDIR /app
 
-COPY pyproject.toml uv.lock .python-version ./
+COPY pyproject.toml uv.lock ./
 
 RUN pip install uv && uv sync --frozen --no-dev
 
@@ -10,5 +10,4 @@ COPY src/ ./src/
 
 EXPOSE 8000
 
-ENTRYPOINT ["uv", "run", "uvicorn"]
-CMD ["src.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uv", "run", "uvicorn", "src.app:app", "--host", "0.0.0.0", "--port", "8000"]

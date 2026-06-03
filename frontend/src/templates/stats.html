@@ -205,6 +205,29 @@
     .chart-wrap         { position: relative; height: 260px; }
     .chart-wrap-tall    { position: relative; height: 220px; }
 
+    /* ── Chart loading overlay ── */
+    .chart-loading {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: var(--card);
+      color: var(--muted);
+      font-size: 0.82rem;
+      gap: 8px;
+      z-index: 1;
+      border-radius: 4px;
+    }
+    .mini-spin {
+      width: 26px; height: 26px;
+      border: 3px solid #e2e8f0;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .9s linear infinite;
+    }
+
     /* ── Charts two-col row ── */
     .charts-row {
       display: grid;
@@ -345,12 +368,14 @@
     <div class="card-box" style="margin-bottom:0">
       <div class="card-title">Top Hiring Companies</div>
       <div class="chart-wrap">
+        <div class="chart-loading" id="companiesPlaceholder"><div class="mini-spin"></div><span>Loading…</span></div>
         <canvas id="locationChart"></canvas>
       </div>
     </div>
     <div class="card-box" style="margin-bottom:0">
       <div class="card-title">Role Distribution</div>
       <div class="chart-wrap">
+        <div class="chart-loading" id="rolesPlaceholder"><div class="mini-spin"></div><span>Loading…</span></div>
         <canvas id="jobTypeChart"></canvas>
       </div>
     </div>
@@ -360,6 +385,7 @@
   <div class="card-box" style="margin-top:20px">
     <div class="card-title">Top 10 Skills Required</div>
     <div class="chart-wrap-tall">
+      <div class="chart-loading" id="skillsPlaceholder"><div class="mini-spin"></div><span>Loading…</span></div>
       <canvas id="skillsChart"></canvas>
     </div>
   </div>
@@ -410,6 +436,7 @@
   ];
 
   let allJobs = [];
+  const chartInstances = {};
 
   /* ── Helpers ── */
   function fmtDate(d) {
@@ -439,7 +466,8 @@
 
   /* ── Chart builders ── */
   function makeHBar(id, labels, values) {
-    return new Chart(document.getElementById(id), {
+    if (chartInstances[id]) { chartInstances[id].destroy(); }
+    return (chartInstances[id] = new Chart(document.getElementById(id), {
       type: 'bar',
       data: {
         labels,
@@ -466,11 +494,12 @@
           },
         },
       },
-    });
+    }));
   }
 
   function makeDoughnut(id, labels, values) {
-    return new Chart(document.getElementById(id), {
+    if (chartInstances[id]) { chartInstances[id].destroy(); }
+    return (chartInstances[id] = new Chart(document.getElementById(id), {
       type: 'doughnut',
       data: {
         labels,
@@ -514,7 +543,7 @@
           },
         },
       },
-    });
+    }));
   }
 
   /* ── Table render ── */
@@ -587,12 +616,12 @@
 
       /* Summary cards */
       const topSkillsObj  = data.top_skills          ?? {};
-      const companiesObj  = data.location_distribution ?? {};
+      const companiesObj  = data.company_distribution ?? {};
       const rolesObj      = data.job_type_distribution ?? {};
 
       const jobs          = data.jobs ?? [];
       const totalJobs     = jobs.length;
-      const totalCompanies = Object.keys(companiesObj).length;
+      const totalCompanies = data.total_companies ?? Object.keys(companiesObj).length;
       const uniqueSkills  = Object.keys(topSkillsObj).length;
       const topSkill      = Object.keys(topSkillsObj)[0] ?? '—';
 
@@ -601,24 +630,39 @@
       document.getElementById('statSkills').textContent     = uniqueSkills;
       document.getElementById('statTopSkill').textContent   = toTitle(topSkill);
 
-      /* Companies — horizontal bar */
+      /* Companies — horizontal bar (top 10) */
+      const companiesPlaceholder = document.getElementById('companiesPlaceholder');
       if (Object.keys(companiesObj).length) {
-        const cLabels = Object.keys(companiesObj).map(l => truncLabel(l, 24));
-        makeHBar('locationChart', cLabels, Object.values(companiesObj));
+        const cEntries = Object.entries(companiesObj).slice(0, 10);
+        makeHBar('locationChart', cEntries.map(([k]) => truncLabel(k, 24)), cEntries.map(([, v]) => v));
+        if (companiesPlaceholder) companiesPlaceholder.style.display = 'none';
+      } else if (companiesPlaceholder) {
+        companiesPlaceholder.querySelector('.mini-spin').style.display = 'none';
+        companiesPlaceholder.querySelector('span').textContent = 'No data available.';
       }
 
       /* Top 10 Skills — horizontal bar */
+      const skillsPlaceholder = document.getElementById('skillsPlaceholder');
       if (Object.keys(topSkillsObj).length) {
         const entries  = Object.entries(topSkillsObj).slice(0, 10);
         const sLabels  = entries.map(([k]) => toTitle(k));
         const sValues  = entries.map(([, v]) => v);
         makeHBar('skillsChart', sLabels, sValues);
+        if (skillsPlaceholder) skillsPlaceholder.style.display = 'none';
+      } else if (skillsPlaceholder) {
+        skillsPlaceholder.querySelector('.mini-spin').style.display = 'none';
+        skillsPlaceholder.querySelector('span').textContent = 'No data available.';
       }
 
       /* Role Distribution — doughnut */
+      const rolesPlaceholder = document.getElementById('rolesPlaceholder');
       if (Object.keys(rolesObj).length) {
         const rEntries = Object.entries(rolesObj).slice(0, 10);
         makeDoughnut('jobTypeChart', rEntries.map(([k]) => k), rEntries.map(([, v]) => v));
+        if (rolesPlaceholder) rolesPlaceholder.style.display = 'none';
+      } else if (rolesPlaceholder) {
+        rolesPlaceholder.querySelector('.mini-spin').style.display = 'none';
+        rolesPlaceholder.querySelector('span').textContent = 'No data available.';
       }
 
       allJobs = jobs;
@@ -631,6 +675,15 @@
       /* Zero-out summary cards */
       ['statTotalJobs','statCompanies','statSkills','statTopSkill'].forEach(id => {
         document.getElementById(id).textContent = '—';
+      });
+      /* Show error state in chart placeholders */
+      ['companiesPlaceholder', 'skillsPlaceholder', 'rolesPlaceholder'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const spin = el.querySelector('.mini-spin');
+        if (spin) spin.style.display = 'none';
+        const lbl = el.querySelector('span');
+        if (lbl) lbl.textContent = 'Unavailable';
       });
     } finally {
       const btn  = document.getElementById('refreshBtn');
@@ -647,6 +700,16 @@
     icon.textContent = '↻';
     icon.classList.add('spin');
     document.getElementById('errorAlert').style.display = 'none';
+    /* Reset chart placeholders to loading state */
+    ['companiesPlaceholder', 'skillsPlaceholder', 'rolesPlaceholder'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.display = 'flex';
+      const spin = el.querySelector('.mini-spin');
+      if (spin) spin.style.display = '';
+      const lbl = el.querySelector('span');
+      if (lbl) lbl.textContent = 'Loading…';
+    });
     loadStats();
   }
 
