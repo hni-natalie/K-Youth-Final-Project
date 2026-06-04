@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import re
+from collections import Counter
 from typing import Annotated
 
 import httpx
@@ -59,8 +60,6 @@ async def api_stats():
             return default
 
     try:
-        def _get_tech():
-            return httpx.get(f"{BACKEND_URL}/api/stats/tech_stack", timeout=30.0)
         def _get_locations():
             return httpx.get(f"{BACKEND_URL}/api/stats/locations_count", timeout=10.0)
         def _get_roles():
@@ -71,8 +70,7 @@ async def api_stats():
             return httpx.get(f"{BACKEND_URL}/api/stats/company", timeout=10.0)
 
         # return_exceptions=True: a timeout in one endpoint won't cancel the others
-        tech_resp, loc_resp, roles_resp, jobs_resp, comp_resp = await asyncio.gather(
-            asyncio.to_thread(_get_tech),
+        loc_resp, roles_resp, jobs_resp, comp_resp = await asyncio.gather(
             asyncio.to_thread(_get_locations),
             asyncio.to_thread(_get_roles),
             asyncio.to_thread(_get_jobs),
@@ -80,25 +78,31 @@ async def api_stats():
             return_exceptions=True,
         )
 
-        tech_stack     = _safe_get(tech_resp,  "data", "top_skills",  default={})
         locations_list = _safe_get(loc_resp,   "data", "locations",   default=[])
         roles_list     = _safe_get(roles_resp, "data", "roles",       default=[])
         raw_jobs       = _safe_get(jobs_resp,  "data", "jobs",        default=[])
         companies_list = _safe_get(comp_resp,  "data", "companies",   default=[])
 
         # Transform each job: split comma-separated tech_stack string into a skills array
+        # and simultaneously count skill frequencies for the top_skills chart
         jobs = []
+        skill_counter: Counter = Counter()
         for job in raw_jobs:
             j = dict(job)
             tech_stack_str = j.pop("tech_stack", "") or ""
-            j["skills"] = [s.strip() for s in tech_stack_str.split(",") if s.strip()]
+            skills = [s.strip() for s in tech_stack_str.split(",") if s.strip() and s.strip().lower() != "none"]
+            j["skills"] = skills
+            for s in skills:
+                skill_counter[s.lower()] += 1
             jobs.append(j)
+
+        top_skills = dict(skill_counter.most_common())
 
         # Company stats are already sorted by count desc; take top 10 for the chart
         top_companies = companies_list[:10]
 
         return JSONResponse({
-            "top_skills": tech_stack,
+            "top_skills": top_skills,
             "location_distribution": {item["location"]: item["count"] for item in locations_list},
             "company_distribution": {item["company"]: item["count"] for item in top_companies},
             "total_companies": len(companies_list),
