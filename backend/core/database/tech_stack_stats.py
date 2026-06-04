@@ -2,7 +2,7 @@ import json
 from collections import Counter
 from backend.utils.error_handlers import InternalServerError
 from backend.core.database.connection import get_db
-from backend.pipeline.prompt_model import prompt_model
+from backend.pipeline.common.prompt_model import prompt_model
 
 MODEL_NAME = "gemini-3.1-flash-lite"
 BATCH_SIZE = 30

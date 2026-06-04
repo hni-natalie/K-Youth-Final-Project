@@ -5,7 +5,7 @@
     "company": "Evolution Singapore",
     "location": "Singapore",
     "salary": "Undisclosed",
-    "posted_date": "8 days ago",
+    "posted_date": "10 days ago",
     "actual_posted_date": "2026-05-25",
     "job_description": "Overview We are looking for an AI Researcher to join the R&D team to build practical AI and machine learning solutions for real-world analytical problems. This role focuses on statistical modelling, predictive analytics, LLM-powered AI agents, and intelligent systems that work across structured and unstructured data. Fresh graduates with strong AI fundamentals and hands-on project experience are encouraged to apply. Responsibilities Develop and evaluate predictive models including regression, classification, and forecasting models. Conduct EDA, statistical experimentation, hypothesis testing, and model validation on large datasets. Build and experiment with LLM systems involving RAG, AI agents, fine-tuning, LoRA, and vector databases. Develop scalable Python-based AI/ML pipelines and reproducible workflows. Work with structured and unstructured datasets including text, image, audio, or multimodal data. Technical Skills Hands-on experience in machine learning, predictive analytics, and statistical modelling. Experience mining and analysing datasets with at least 1 million records. Strong understanding of model evaluation, experimentation, and failure analysis. Familiar with LoRA fine-tuning techniques within LLM workflows. Strong Python skills with Pandas, NumPy, Scikit-learn, SciPy, Matplotlib, and SQL. Experience building reproducible AI/ML pipelines and workflows. Good understanding of supervised, unsupervised, and generative AI models. Singaporean/PR only due to quota restrictions."
 }
