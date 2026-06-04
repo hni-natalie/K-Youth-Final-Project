@@ -31,7 +31,7 @@ async def internal_error_handler(request, exc):
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "message": exc.message,
+            "message": exc.detail,
             "data": None
         }
     )
@@ -41,7 +41,7 @@ async def db_error_handler(request, exc):
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "message": exc.message,
+            "message": exc.detail,
             "data": None
         }
     )
@@ -61,7 +61,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content={
-            "message": exc.message,
+            "message": exc.detail,
             "data": None,
         },
     )
