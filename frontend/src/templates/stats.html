@@ -310,7 +310,7 @@
   <nav class="header-nav" style="display:flex;align-items:center;gap:6px;">
     <a href="/">🎯 Analyzer</a>
     <a href="/stats" class="active">📊 Stats</a>
-    <button class="btn-refresh" id="refreshBtn" onclick="refreshStats()" title="Refresh data">
+    <button class="btn-refresh" id="refreshBtn" onclick="refreshStats()" title="Fetch new jobs &amp; refresh charts (~2 min)">
       <span id="refreshIcon">↻</span> Refresh
     </button>
   </nav>
@@ -700,14 +700,34 @@
     }
   }
 
-  function refreshStats() {
+  async function refreshStats() {
     const btn  = document.getElementById('refreshBtn');
     const icon = document.getElementById('refreshIcon');
-    btn.disabled  = true;
+    btn.disabled = true;
+    icon.textContent = '⏳';
+    icon.classList.remove('spin');
+    btn.title = 'Fetching new jobs… (~2 min)';
+    document.getElementById('errorAlert').style.display = 'none';
+
+    /* Step 1 — run the pipeline to update the DB */
+    try {
+      const res  = await fetch('/api/updates');
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+    } catch (err) {
+      /* Show error but still reload charts with existing data */
+      const alert = document.getElementById('errorAlert');
+      if (alert) {
+        alert.style.display = 'flex';
+        const msg = alert.querySelector('span') ?? alert;
+        msg.textContent = `Update failed: ${err.message}. Showing existing data.`;
+      }
+    }
+
+    /* Step 2 — reset chart placeholders to loading state */
     icon.textContent = '↻';
     icon.classList.add('spin');
-    document.getElementById('errorAlert').style.display = 'none';
-    /* Reset chart placeholders to loading state */
+    btn.title = 'Refreshing charts…';
     ['companiesPlaceholder', 'skillsPlaceholder', 'rolesPlaceholder'].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
@@ -717,7 +737,11 @@
       const lbl = el.querySelector('span');
       if (lbl) lbl.textContent = 'Loading…';
     });
-    loadStats();
+
+    /* Step 3 — reload all charts and table from fresh DB data */
+    await loadStats();
+
+    btn.title = 'Refresh data';
   }
 
   loadStats();

@@ -140,6 +140,21 @@ async def api_roles():
     return JSONResponse({"roles": _MOCK_ROLES, "_fallback": "mock"})
 
 
+@app.get("/api/updates")
+async def api_updates():
+    """Proxy to backend /api/updates — runs the incremental pipeline (~2 min)."""
+    try:
+        def _run():
+            return httpx.get(f"{BACKEND_URL}/api/updates", timeout=300.0)  # 5 min max
+        resp = await asyncio.to_thread(_run)
+        return JSONResponse(resp.json(), status_code=resp.status_code)
+    except Exception as exc:
+        return JSONResponse(
+            {"error": f"Update failed: {type(exc).__name__}: {exc}"},
+            status_code=503,
+        )
+
+
 @app.get("/api/locations")
 async def api_locations(role: str | None = None):
     """Return locations, optionally filtered to only those with jobs for the given role."""

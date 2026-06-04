@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.core.config import settings
-from backend.pipeline.prompt_model import prompt_model
+from backend.pipeline.common.prompt_model import prompt_model
 
 logger = logging.getLogger(__name__)
 
