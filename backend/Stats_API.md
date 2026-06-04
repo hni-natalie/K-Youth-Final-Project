@@ -291,3 +291,41 @@ Returns the frequency distribution of technology stacks found in job postings. T
 ```
 
 ---
+
+## 📊 8. Add New Data 
+
+Base URL:
+
+```text
+http://localhost:8001/api
+```
+
+**Endpoint:**  
+
+```text
+GET /updates
+```
+
+**Description:**  
+This endpoint triggers the full job pipeline, which includes:
+
+- Fetching newly scraped job postings
+- Comparing with existing database records to remove duplicates
+- Extracting and saving structured job data
+- Inserting new jobs into the database
+- Running AI enrichment (role classification + tech stack extraction)
+
+It returns the number of newly inserted jobs and total processing time.
+
+**Response:**  
+```json
+{
+  "message": "Pipeline executed successfully",
+  "data": {
+    "number_of_data_newly_added": 69,
+    "time_taken_seconds": 120.03
+  }
+}
+```
+
+---

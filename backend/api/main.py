@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.routes import search_routes, stats_routes
 from backend.core.config import settings
 from backend.utils.error_handlers import DatabaseError, InternalServerError
+from backend.pipeline.incremental.run import run_pipeline
 
 app = FastAPI(title="Job Market API", version="1.0")
 
@@ -64,7 +65,19 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         },
     )
 
-@app.get("/health")
+@app.get("/api/updates")
+def start_pipeline():
+    inserted_count, elapsed = run_pipeline()
+
+    return {
+        "message": "Pipeline executed successfully",
+        "data": {
+            "number_of_data_newly_added": inserted_count,
+            "time_taken_seconds": round(elapsed, 2)
+        }
+    }
+
+@app.get("/api/health")
 def health_check():
     return {
         "message": "API is running",
