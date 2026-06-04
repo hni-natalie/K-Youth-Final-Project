@@ -23,7 +23,7 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data/jobs_database.db:/app/data/jobs.db:ro
+      - ./data/jobs_database.db:/app/data/jobs_database.db:rw
     networks:
       - app_network
 
