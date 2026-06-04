@@ -24,6 +24,24 @@ templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
 MAX_PDF_BYTES = 10 * 1024 * 1024  # 10 MB
 
+# Common tech skill synonyms — maps short/variant forms to canonical names
+_SKILL_SYNONYMS: dict[str, str] = {
+    "ai": "artificial intelligence",
+    "ml": "machine learning",
+    "dl": "deep learning",
+    "nlp": "natural language processing",
+    "cv": "computer vision",
+    "genai": "generative ai",
+    "gen ai": "generative ai",
+    "llm": "large language models",
+    "llms": "large language models",
+    "js": "javascript",
+    "ts": "typescript",
+    "py": "python",
+    "k8s": "kubernetes",
+    "tf": "tensorflow",
+}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -93,7 +111,8 @@ async def api_stats():
             skills = [s.strip() for s in tech_stack_str.split(",") if s.strip() and s.strip().lower() != "none"]
             j["skills"] = skills
             for s in skills:
-                skill_counter[s.lower()] += 1
+                normalized = _SKILL_SYNONYMS.get(s.lower(), s.lower())
+                skill_counter[normalized] += 1
             jobs.append(j)
 
         top_skills = dict(skill_counter.most_common())
