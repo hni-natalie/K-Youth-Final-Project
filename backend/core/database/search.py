@@ -1,4 +1,4 @@
-from backend.utils.error_handlers import DatabaseError, InternalServerError
+from backend.utils.error_handlers import InternalServerError
 from backend.core.database.connection import get_db
 
 def get_total_jobs():
@@ -8,7 +8,7 @@ def get_total_jobs():
             cursor.execute("SELECT COUNT(*) as count FROM jobs")
             result = cursor.fetchone()
             if result is None:
-                raise DatabaseError("No data returned from database")
+                raise InternalServerError("No data returned from database")
 
             return {
                 "message": "Total jobs retrieved",
@@ -18,13 +18,33 @@ def get_total_jobs():
     except Exception as e:
         raise InternalServerError(f"Unexpected error: {str(e)}")
 
+def get_all_jobs():
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
+                FROM jobs
+            ''')
+
+            jobs = cursor.fetchall()
+            job_list = [dict(job) for job in jobs]
+
+            return {
+                "message": f"Found {len(job_list)} jobs",
+                "data": {"total": len(job_list), "jobs": job_list}
+            }
+
+    except Exception as e:
+        raise InternalServerError(f"Error searching jobs by tech: {str(e)}")
+
 
 def get_jobs_by_tech(tech: str):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT title, company, location, salary, tech_stack, job_url
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
                 FROM jobs
                 WHERE LOWER(tech_stack) LIKE LOWER(?)
             ''', (f"%{tech}%",))
@@ -46,7 +66,7 @@ def get_jobs_by_company(company_name: str):
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT title, company, location, salary, tech_stack, posted_date, job_url
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
                 FROM jobs
                 WHERE LOWER(company) LIKE LOWER(?)
             ''', (f"%{company_name}%",))
@@ -69,7 +89,7 @@ def get_jobs_by_location(location: str):
             cursor = conn.cursor()
             
             cursor.execute('''
-                SELECT title, company, location, salary, tech_stack, posted_date, job_url
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
                 FROM jobs
                 WHERE LOWER(location) LIKE LOWER(?)
             ''', (f"%{location}%",))
@@ -91,7 +111,7 @@ def get_jobs_by_salary(input_salary: float):
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT title, company, location, salary, tech_stack, job_url
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
                 FROM jobs
                 WHERE salary != "undisclosed" AND salary IS NOT NULL
             ''')
@@ -122,3 +142,27 @@ def get_jobs_by_salary(input_salary: float):
         
     except Exception as e:
         raise InternalServerError(f"Error searching jobs by salary: {str(e)}")
+
+
+def get_jobs_by_role(role: str):
+    """Return all jobs for a given role (used for analyze page)."""
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT title, company, location, salary, tech_stack,
+                       actual_posted_date, job_url
+                FROM jobs
+                WHERE role = ?
+                """,
+                (role,),
+            )
+            jobs = cursor.fetchall()
+            job_list = [dict(job) for job in jobs]
+        return {
+            "message": f"Found {len(job_list)} jobs",
+            "data": {"total": len(job_list), "jobs": job_list},
+        }
+    except Exception as e:
+        raise InternalServerError(f"Error fetching jobs by role: {str(e)}")

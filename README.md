@@ -243,38 +243,54 @@ Analyzed Job 26498274: Python, PyTorch, 3D Computer Vision
 ## 📂 Folder Structure
 
 ```plaintext
-backend/
-├── api/
-│   ├── main.py                      # FastAPI entry point
-│   ├── routes/
-│   │   ├── search_routes.py
-│   │   ├── stats_routes.py
-│   │   └── __init__.py
-│
-├── core/
-│   ├── config.py                   # Settings (DB_PATH, API keys)
-│   ├── database/
+├── backend
+│   ├── Search_API.md
+│   ├── Stats_API.md
+│   ├── api
 │   │   ├── __init__.py
-│   │   ├── connection.py          # get_db() ONLY
-│   │   ├── search.py              # search queries (tech, company, location, salary)
-│   │   └── stats.py              # aggregation queries (count, grouping, analytics)
-│
-├── pipeline/
-│   ├── extract_html.py
-│   ├── fetch_job_desc.py
-│   ├── extract_job_data.py
-│   ├── extract_job_details.py
-│   ├── extract_tech_stack.py
-│   ├── prompt_model.py
-│   └── load_data_into_db.py
-│
-├── schema/
-│   ├── stats_schema.py
-│   └── __init__.py
-│
-├── utils/
-│   ├── error_handlers.py
-│   └── __init__.py
+│   │   ├── main.py
+│   │   └── routes
+│   │       ├── search_routes.py
+│   │       └── stats_routes.py
+│   ├── core
+│   │   ├── __init__.py
+│   │   ├── config.py                   # Store Shared Global Variable 
+│   │   └── database
+│   │       ├── chat.py
+│   │       ├── company_stats.py
+│   │       ├── connection.py
+│   │       ├── location_stats.py
+│   │       ├── role_stats.py
+│   │       ├── salary_stats.py
+│   │       ├── search.py
+│   │       ├── tech_stack_stats.py
+│   │       └── trend_stats.py
+│   ├── pipeline
+│   │   ├── __init__.py
+│   │   ├── bootstrap
+│   │   │   ├── __init__.py
+│   │   │   ├── extract_html.py
+│   │   │   ├── extract_job_data.py
+│   │   │   ├── extract_job_details.py
+│   │   │   └── load_data_into_db.py
+│   │   ├── common
+│   │   │   ├── __init__.py
+│   │   │   ├── config.py
+│   │   │   ├── extract_role.py
+│   │   │   ├── extract_tech_stack.py
+│   │   │   ├── fetch_job_desc.py
+│   │   │   └── prompt_model.py
+│   │   └── incremental
+│   │       ├── __init__.py
+│   │       ├── add_jobs_data.py
+│   │       ├── compare_exisitng.py
+│   │       ├── fetch_new_jobs.py
+│   │       ├── insert_jobs.py
+│   │       └── run.py
+│   ├── pyproject.toml
+│   ├── utils
+│   │   ├── __init__.py
+│   │   └── error_handlers.py
 │
 ├── pyproject.toml
 └── uv.lock
@@ -283,6 +299,8 @@ data/
 ├── job_sources/                 # Raw HTML pages
 ├── job_blocks/                  # Filtered tech jobs (HTML)
 ├── job_data/                    # Structured JSON data
+├── metadata/                    # Structured JSON data
+|     └── page_tracker.json      # Keep track on the new page number 
 └── jobs_database.db             # SQLite database
 ```
 
