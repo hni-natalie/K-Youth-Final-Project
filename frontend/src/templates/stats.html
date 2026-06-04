@@ -563,9 +563,9 @@
     empty.style.display = 'none';
     tbody.innerHTML = jobs.map(j => {
       const skills = Array.isArray(j.skills) ? j.skills : [];
-      const pills  = skills
-        .map(s => `<span class="skill-pill">${esc(toTitle(s))}</span>`)
-        .join('');
+      const pills  = skills.length
+        ? skills.map(s => `<span class="skill-pill">${esc(toTitle(s))}</span>`).join('')
+        : '<span style="color:var(--muted);">—</span>';
       const loc = j.location && j.location.trim()
         ? esc(j.location)
         : '<span style="color:var(--muted);">—</span>';
