@@ -600,9 +600,10 @@
 
       const filtered = q
         ? allJobs.filter(j =>
-            (j.title   ?? '').toLowerCase().includes(q) ||
-            (j.company ?? '').toLowerCase().includes(q) ||
-            (j.salary  ?? '').toLowerCase().includes(q) ||
+            (j.title    ?? '').toLowerCase().includes(q) ||
+            (j.company  ?? '').toLowerCase().includes(q) ||
+            (j.salary   ?? '').toLowerCase().includes(q) ||
+            (j.role     ?? '').toLowerCase().includes(q) ||
             (Array.isArray(j.skills) ? j.skills.join(' ') : (j.skills ?? '')).toLowerCase().includes(q) ||
             (j.location ?? '').toLowerCase().includes(q)
           )
@@ -610,6 +611,41 @@
 
       rc.textContent = q ? `${filtered.length} of ${allJobs.length} jobs match "${q}"` : '';
       renderTable(filtered);
+
+      // Update total jobs summary card to reflect current filter
+      document.getElementById('statTotalJobs').textContent = filtered.length;
+
+      // Re-render all three charts from the filtered (or full) job set
+      const src = filtered;
+
+      const companyCounts = {};
+      src.forEach(j => { if (j.company) companyCounts[j.company] = (companyCounts[j.company] || 0) + 1; });
+      const compEntries = Object.entries(companyCounts).sort(([,a],[,b]) => b - a).slice(0, 10);
+      if (compEntries.length) {
+        makeHBar('locationChart', compEntries.map(([k]) => truncLabel(k, 24)), compEntries.map(([,v]) => v));
+        document.getElementById('companiesPlaceholder').style.display = 'none';
+      }
+
+      const skillCounts = {};
+      src.forEach(j => {
+        (Array.isArray(j.skills) ? j.skills : []).forEach(s => {
+          const k = s.toLowerCase();
+          skillCounts[k] = (skillCounts[k] || 0) + 1;
+        });
+      });
+      const skillEntries = Object.entries(skillCounts).sort(([,a],[,b]) => b - a).slice(0, 10);
+      if (skillEntries.length) {
+        makeHBar('skillsChart', skillEntries.map(([k]) => toTitle(k)), skillEntries.map(([,v]) => v));
+        document.getElementById('skillsPlaceholder').style.display = 'none';
+      }
+
+      const roleCounts = {};
+      src.forEach(j => { if (j.role) roleCounts[j.role] = (roleCounts[j.role] || 0) + 1; });
+      const roleEntries = Object.entries(roleCounts).sort(([,a],[,b]) => b - a).slice(0, 10);
+      if (roleEntries.length) {
+        makeDoughnut('jobTypeChart', roleEntries.map(([k]) => k), roleEntries.map(([,v]) => v));
+        document.getElementById('rolesPlaceholder').style.display = 'none';
+      }
     }, 180);
   }
 
