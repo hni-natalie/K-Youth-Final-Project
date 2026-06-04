@@ -20,7 +20,7 @@ KEYWORDS = [
 ]
 
 DELAY = 1.5
-MAX_PAGES = 18  # ricebowl.my wraps back to page 1 after ~17 pages
+MAX_PAGES = 100  # hard safety cap only — real termination is handled by empty-page, early-stop, and wrap-around detection
 
 
 # =========================
