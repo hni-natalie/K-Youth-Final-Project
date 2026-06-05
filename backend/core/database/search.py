@@ -23,7 +23,7 @@ def get_all_jobs():
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute('''
-                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url
+                SELECT title, company, location, salary, tech_stack, actual_posted_date, job_url, role
                 FROM jobs
             ''')
 
