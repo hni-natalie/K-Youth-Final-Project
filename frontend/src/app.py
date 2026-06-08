@@ -356,7 +356,6 @@ def _filter_jobs_by_location_salary(
         nums = [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]+", salary_pref)]
         if nums:
             pref_min = min(nums)
-            pref_max = max(nums) if len(nums) > 1 else None
             filtered = []
             for j in result:
                 job_sal = (j.get("salary") or "").replace(",", "")
@@ -364,12 +363,85 @@ def _filter_jobs_by_location_salary(
                 if not job_nums:           # undisclosed — include
                     filtered.append(j)
                     continue
+                # Min-based filter: show jobs whose maximum offered salary reaches
+                # the user's expected minimum (i.e. the job CAN pay at least pref_min).
                 job_max = max(job_nums)
-                job_min = min(job_nums)
-                if job_max >= pref_min and (pref_max is None or job_min <= pref_max):
+                if job_max >= pref_min:
                     filtered.append(j)
             result = filtered
     return result
+
+
+def _build_demand_trend(jobs: list[dict]) -> list[dict]:
+    """Build role-specific posting trend from analyze job result set."""
+    date_counter: Counter = Counter()
+    for job in jobs:
+        raw_date = (job.get("actual_posted_date") or "").strip()
+        if raw_date:
+            date_counter[raw_date] += 1
+    return [
+        {"date": d, "count": c}
+        for d, c in sorted(date_counter.items(), key=lambda item: item[0])
+    ]
+
+
+def _extract_salary_numbers(salary_text: str) -> tuple[int, int] | None:
+    """Parse salary text (e.g. MYR 3,000 - 5,000) to numeric min/max."""
+    if not salary_text:
+        return None
+    lowered = salary_text.lower()
+    if "undisclosed" in lowered:
+        return None
+    nums = [int(n.replace(",", "")) for n in re.findall(r"\d[\d,]*", salary_text)]
+    if not nums:
+        return None
+    if len(nums) == 1:
+        return nums[0], nums[0]
+    return min(nums[0], nums[1]), max(nums[0], nums[1])
+
+
+def _build_salary_summary(jobs: list[dict]) -> dict:
+    """Return box-plot-ready salary stats from role-specific jobs."""
+    salary_points: list[int] = []
+    for job in jobs:
+        parsed = _extract_salary_numbers(job.get("salary") or "")
+        if not parsed:
+            continue
+        min_sal, max_sal = parsed
+        salary_points.extend([min_sal, max_sal])
+    if not salary_points:
+        return {
+            "min": None,
+            "q1": None,
+            "median": None,
+            "q3": None,
+            "average": None,
+            "max": None,
+            "samples": 0,
+        }
+
+    sorted_points = sorted(salary_points)
+
+    def _percentile(values: list[int], p: float) -> float:
+        if not values:
+            return 0.0
+        if len(values) == 1:
+            return float(values[0])
+        idx = (len(values) - 1) * p
+        lo = int(idx)
+        hi = min(lo + 1, len(values) - 1)
+        weight = idx - lo
+        return values[lo] * (1 - weight) + values[hi] * weight
+
+    return {
+        "min": sorted_points[0],
+        "q1": round(_percentile(sorted_points, 0.25), 2),
+        "median": round(_percentile(sorted_points, 0.5), 2),
+        "q3": round(_percentile(sorted_points, 0.75), 2),
+        "average": round(sum(sorted_points) / len(sorted_points), 2),
+        "max": sorted_points[-1],
+        "samples": len(salary_points) // 2,
+    }
 
 
 @app.post("/analyze")
@@ -440,6 +512,10 @@ async def analyze(
     # 8. Filter job listings by location + salary for the listings section
     job_listings = _filter_jobs_by_location_salary(raw_jobs, location, expected_salary)
 
+    # 8b. Build extra charts data for analyze page
+    demand_trend = _build_demand_trend(raw_jobs)
+    salary_summary = _build_salary_summary(raw_jobs)
+
     # 9. Ask AI only for recommendation text (skills + score already computed from DB)
     ai_recommendation = ""
     limitations = "Analysis based on available job listings in the database."
@@ -476,6 +552,8 @@ async def analyze(
         "ai_recommendation": ai_recommendation,
         "limitations":      limitations,
         "job_listings":     job_listings,
+        "demand_trend":     demand_trend,
+        "salary_summary":   salary_summary,
         "expected_salary":  expected_salary or None,
         "_mock":            not bool(raw_jobs),
     })

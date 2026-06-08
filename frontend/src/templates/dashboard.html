@@ -383,6 +383,14 @@
     }
     @media (max-width: 560px) { .skills-grid { grid-template-columns: 1fr; } }
 
+    .insight-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 760px) { .insight-grid { grid-template-columns: 1fr; } }
+
     .skill-tag {
       display: inline-flex;
       align-items: center;
@@ -560,18 +568,20 @@
 
           <div class="form-group">
             <label class="form-label" for="expectedSalary">
-              Expected Salary
+              Expected Salary (Min, MYR)
               <span style="color:var(--muted);font-weight:400;">(optional)</span>
             </label>
-            <select class="form-select" id="expectedSalary" name="expected_salary">
-              <option value="">No preference</option>
-              <option>MYR 2,000 – 3,000</option>
-              <option>MYR 3,000 – 5,000</option>
-              <option>MYR 5,000 – 8,000</option>
-              <option>MYR 8,000 – 12,000</option>
-              <option>MYR 12,000 – 15,000</option>
-              <option>MYR 15,000+</option>
-            </select>
+            <input
+              class="form-control"
+              id="expectedSalary"
+              name="expected_salary"
+              type="number"
+              min="0"
+              step="100"
+              placeholder="No preference"
+              inputmode="numeric"
+            >
+            <div class="form-hint">Enter your expected minimum monthly salary, e.g. 5000</div>
           </div>
 
           <div class="form-group">
@@ -683,6 +693,25 @@
           </div>
         </div>
 
+        <div class="insight-grid">
+          <div class="card">
+            <div class="card-title">📈 Demand Trend (This Role)</div>
+            <div class="chart-wrap">
+              <canvas id="demandTrendChart"></canvas>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">💰 Salary Benchmarks (MYR)
+              <span id="salaryBenchmarkMeta" style="font-weight:400;text-transform:none;font-size:.75rem;color:var(--muted);margin-left:6px;"></span>
+            </div>
+            <div class="chart-wrap" style="position:relative">
+              <canvas id="salarySummaryChart"></canvas>
+              <div id="salaryNoData" style="display:none;position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:var(--muted);font-size:.82rem;">No disclosed salary data for this role</div>
+            </div>
+          </div>
+        </div>
+
         <!-- Matched + Missing Skills -->
         <div class="skills-grid">
 
@@ -767,6 +796,8 @@
 
   const CIRCUMFERENCE = 2 * Math.PI * 45; // ≈ 283
   let skillsChart = null;
+  let demandTrendChart = null;
+  let salarySummaryChart = null;
 
   // ── Populate dropdowns from backend (fallback to preset) ────────────────
   function fillSelect(selectEl, items, placeholder) {
@@ -880,6 +911,140 @@
     });
   }
 
+  function renderDemandTrend(trendRows) {
+    const ctx = document.getElementById('demandTrendChart').getContext('2d');
+    if (demandTrendChart) demandTrendChart.destroy();
+
+    const rows = Array.isArray(trendRows) ? trendRows : [];
+    const labels = rows.map(r => r.date || '');
+    const values = rows.map(r => Number(r.count) || 0);
+
+    demandTrendChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          borderColor: 'rgba(16,185,129,1)',
+          backgroundColor: 'rgba(16,185,129,.18)',
+          borderWidth: 2,
+          fill: true,
+          pointRadius: 2,
+          tension: 0.28,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { grid: { display: false }, ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } } },
+          y: { beginAtZero: true, grid: { color: 'rgba(148,163,184,.2)' }, ticks: { precision: 0, font: { size: 10 } } },
+        },
+      },
+    });
+  }
+
+  function renderSalarySummary(summary) {
+    const ctx      = document.getElementById('salarySummaryChart').getContext('2d');
+    const noData   = document.getElementById('salaryNoData');
+    const metaSpan = document.getElementById('salaryBenchmarkMeta');
+    if (salarySummaryChart) salarySummaryChart.destroy();
+
+    // No disclosed salary data — show placeholder
+    if (!summary || summary.samples === 0 || summary.min == null) {
+      ctx.canvas.style.display = 'none';
+      noData.style.display     = 'flex';
+      if (metaSpan) metaSpan.textContent = '';
+      return;
+    }
+    ctx.canvas.style.display = '';
+    noData.style.display     = 'none';
+    if (metaSpan) metaSpan.textContent = `(${summary.samples} jobs with disclosed salary)`;
+
+    const min     = Number(summary.min);
+    const q1      = Number(summary.q1);
+    const median  = Number(summary.median);
+    const q3      = Number(summary.q3);
+    const max     = Number(summary.max);
+    const average = Number(summary.average);
+
+    // Thin half-width so median / average render as a vertical line across the box
+    const span = Math.max(max - min, 1);
+    const tick = Math.max(span * 0.006, 20);
+    const fmt  = (v) => `RM ${Number(v).toLocaleString()}`;
+
+    salarySummaryChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['Monthly salary'],
+        datasets: [
+          {
+            label: 'Min – Max',
+            data: [[min, max]],
+            backgroundColor: 'rgba(148,163,184,.30)',
+            borderColor: 'rgba(100,116,139,.9)',
+            borderWidth: 1,
+            barThickness: 16,
+            borderRadius: 3,
+          },
+          {
+            label: 'Q1 – Q3 (IQR)',
+            data: [[q1, q3]],
+            backgroundColor: 'rgba(79,70,229,.45)',
+            borderColor: 'rgba(79,70,229,1)',
+            borderWidth: 1.5,
+            barThickness: 46,
+            borderRadius: 4,
+          },
+          {
+            label: 'Median',
+            data: [[median - tick, median + tick]],
+            backgroundColor: 'rgba(245,158,11,1)',
+            borderColor: 'rgba(245,158,11,1)',
+            barThickness: 46,
+          },
+          {
+            label: 'Average',
+            data: [[average - tick, average + tick]],
+            backgroundColor: 'rgba(16,185,129,1)',
+            borderColor: 'rgba(16,185,129,1)',
+            barThickness: 46,
+          },
+        ],
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } },
+          tooltip: {
+            callbacks: {
+              label: (c) => {
+                switch (c.dataset.label) {
+                  case 'Min – Max':     return ` Range: ${fmt(min)} – ${fmt(max)}`;
+                  case 'Q1 – Q3 (IQR)': return ` IQR: ${fmt(q1)} – ${fmt(q3)}`;
+                  case 'Median':        return ` Median: ${fmt(median)}`;
+                  case 'Average':       return ` Average: ${fmt(average)}`;
+                  default:              return '';
+                }
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: 'rgba(148,163,184,.2)' },
+            ticks: { font: { size: 10 }, callback: (v) => fmt(v) },
+          },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        },
+      },
+    });
+  }
+
   // ── Skill tags ───────────────────────────────────────────────
   function renderMatched(skills) {
     if (!skills.length) {
@@ -938,7 +1103,12 @@
     // Build subtitle
     const parts = [];
     if (location && location !== 'No preference') parts.push(location);
-    if (salary) parts.push(salary);
+    if (salary) {
+      const salNum = Number(String(salary).replace(/[^\d.]/g, ''));
+      parts.push(Number.isFinite(salNum) && salNum > 0
+        ? `Min RM ${salNum.toLocaleString()}`
+        : String(salary));
+    }
     subtitle.textContent = jobs.length + ' result' + (jobs.length !== 1 ? 's' : '')
       + (parts.length ? ' \u2022 ' + parts.join(' \u2022 ') : '');
 
@@ -948,7 +1118,10 @@
       const skillHtml = skills.map(s =>
         `<span class="skill-tag tag-low">${escHtml(s)}</span>`
       ).join('');
-      const salary   = job.salary && job.salary.toLowerCase() !== 'undisclosed' ? job.salary : null;
+      const hasSalary = job.salary && job.salary.toLowerCase() !== 'undisclosed';
+      const salaryHtml = hasSalary
+        ? `<span>💰 ${escHtml(job.salary)}</span>`
+        : `<span style="color:var(--muted);">💰 Undisclosed</span>`;
       const posted   = job.actual_posted_date || '';
       const viewBtn  = job.job_url
         ? `<a href="${escHtml(job.job_url)}" target="_blank" rel="noopener noreferrer" class="btn-view-job">View Job →</a>`
@@ -959,7 +1132,7 @@
           <div class="job-card-company">🏢 ${escHtml(job.company || '')}</div>
           <div class="job-card-meta">
             <span>📍 ${escHtml(job.location || '')}</span>
-            ${salary ? `<span>💰 ${escHtml(salary)}</span>` : ''}
+            ${salaryHtml}
             ${posted ? `<span>📅 ${escHtml(posted)}</span>` : ''}
           </div>
           ${skillHtml ? `<div class="job-card-skills">${skillHtml}</div>` : ''}
@@ -1002,6 +1175,8 @@
 
       // Chart + skills
       renderChart(data.top_market_skills ?? []);
+      renderDemandTrend(data.demand_trend ?? []);
+      renderSalarySummary(data.salary_summary ?? {});
       renderMatched(data.matched_skills  ?? []);
       renderMissing(data.missing_skills  ?? []);
 

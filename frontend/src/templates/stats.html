@@ -248,6 +248,16 @@
       font-size: 0.8rem;
       letter-spacing: .03em;
     }
+    #jobTable thead th.sortable {
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    #jobTable thead th.sortable .sort-indicator {
+      margin-left: 6px;
+      opacity: .7;
+      font-size: 0.7rem;
+    }
     #jobTable thead th:first-child { border-radius: 8px 0 0 0; }
     #jobTable thead th:last-child  { border-radius: 0 8px 0 0; }
     #jobTable tbody td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
@@ -400,12 +410,12 @@
       <table class="table mb-0" id="jobTable">
         <thead>
           <tr>
-            <th>Title</th>
-            <th>Company</th>
-            <th>Location</th>
-            <th>Salary</th>
-            <th>Posted</th>
-            <th>Skills</th>
+            <th class="sortable" data-sort-key="title">Title<span class="sort-indicator">↕</span></th>
+            <th class="sortable" data-sort-key="company">Company<span class="sort-indicator">↕</span></th>
+            <th class="sortable" data-sort-key="location">Location<span class="sort-indicator">↕</span></th>
+            <th class="sortable" data-sort-key="salary">Salary<span class="sort-indicator">↕</span></th>
+            <th class="sortable" data-sort-key="actual_posted_date">Posted<span class="sort-indicator">↕</span></th>
+            <th class="sortable" data-sort-key="skills">Skills<span class="sort-indicator">↕</span></th>
           </tr>
         </thead>
         <tbody id="jobTableBody">
@@ -436,7 +446,9 @@
   ];
 
   let allJobs = [];
+  let activeJobs = [];
   const chartInstances = {};
+  const sortState = { key: '', direction: 'asc' };
 
   /* ── Helpers ── */
   function fmtDate(d) {
@@ -462,6 +474,52 @@
   function truncLabel(str, max = 22) {
     const t = toTitle(str);
     return t.length > max ? t.slice(0, max - 1) + '…' : t;
+  }
+
+  function parseSalaryMin(salaryText) {
+    const values = String(salaryText ?? '').match(/\d[\d,]*/g) || [];
+    if (!values.length) return Number.NEGATIVE_INFINITY;
+    return Number(values[0].replace(/,/g, '')) || Number.NEGATIVE_INFINITY;
+  }
+
+  function getSortValue(job, key) {
+    if (key === 'salary') return parseSalaryMin(job.salary);
+    if (key === 'actual_posted_date') {
+      const ts = new Date(job.actual_posted_date || '').getTime();
+      return Number.isFinite(ts) ? ts : Number.NEGATIVE_INFINITY;
+    }
+    if (key === 'skills') return Array.isArray(job.skills) ? job.skills.length : 0;
+    return String(job[key] ?? '').toLowerCase();
+  }
+
+  function applySortAndRender() {
+    let rows = [...activeJobs];
+    if (sortState.key) {
+      rows.sort((a, b) => {
+        const va = getSortValue(a, sortState.key);
+        const vb = getSortValue(b, sortState.key);
+        if (typeof va === 'number' && typeof vb === 'number') {
+          return sortState.direction === 'asc' ? va - vb : vb - va;
+        }
+        return sortState.direction === 'asc'
+          ? String(va).localeCompare(String(vb))
+          : String(vb).localeCompare(String(va));
+      });
+    }
+    renderTable(rows);
+  }
+
+  function updateSortIndicators() {
+    document.querySelectorAll('#jobTable thead th.sortable').forEach(th => {
+      const icon = th.querySelector('.sort-indicator');
+      if (!icon) return;
+      const key = th.dataset.sortKey;
+      if (key !== sortState.key) {
+        icon.textContent = '↕';
+      } else {
+        icon.textContent = sortState.direction === 'asc' ? '↑' : '↓';
+      }
+    });
   }
 
   /* ── Chart builders ── */
@@ -609,8 +667,10 @@
           )
         : allJobs;
 
+      activeJobs = filtered;
+
       rc.textContent = q ? `${filtered.length} of ${allJobs.length} jobs match "${q}"` : '';
-      renderTable(filtered);
+      applySortAndRender();
 
       // Update total jobs summary card to reflect current filter
       document.getElementById('statTotalJobs').textContent = filtered.length;
@@ -709,7 +769,8 @@
       }
 
       allJobs = jobs;
-      renderTable(allJobs);
+      activeJobs = [...allJobs];
+      applySortAndRender();
 
     } catch {
       document.getElementById('errorAlert').style.display = 'flex';
@@ -779,6 +840,28 @@
 
     btn.title = 'Refresh data';
   }
+
+  document.querySelectorAll('#jobTable thead th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sortKey;
+      if (sortState.key === key) {
+        if (sortState.direction === 'asc') {
+          sortState.direction = 'desc';
+        } else {
+          // Third click: reset sort
+          sortState.key = '';
+          sortState.direction = 'asc';
+        }
+      } else {
+        sortState.key = key;
+        sortState.direction = 'asc';
+      }
+      updateSortIndicators();
+      applySortAndRender();
+    });
+  });
+
+  updateSortIndicators();
 
   loadStats();
 </script>
