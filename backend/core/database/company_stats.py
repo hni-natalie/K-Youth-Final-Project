@@ -75,3 +75,60 @@ def get_company_stats():
     except Exception as e:
         print("💥 ERROR:", str(e))
         raise InternalServerError(f"Failed to fetch company stats: {str(e)}")
+
+
+def get_companies_by_role(role: str) -> dict:
+    """
+    Get company frequency filtered by job title (role keyword match).
+    Example: 'data scientist', 'software engineer'
+    """
+
+    if not role:
+        raise InternalServerError("Role cannot be empty")
+
+    try:
+        with get_db() as conn:
+            cursor = conn.cursor()
+
+            query = """
+                SELECT company
+                FROM jobs
+                WHERE LOWER(role) LIKE ?
+            """
+
+            cursor.execute(query, (f"%{role.lower()}%",))
+            rows = cursor.fetchall()
+
+            if not rows:
+                raise InternalServerError(f"No jobs found for role: {role}")
+
+            counter = Counter()
+
+            for row in rows:
+                company = row["company"]
+                if not company:
+                    continue
+
+                key = normalize_company_key(company)
+                counter[key] += 1
+
+            stats = [
+                {
+                    "company": format_company_name(name),
+                    "count": count
+                }
+                for name, count in counter.most_common()
+            ]
+
+            return {
+                "message": f"Company stats for role: {role}",
+                "data": {
+                    "companies": stats,
+                    "total_unique": len(counter),
+                    "total_records": sum(counter.values())
+                }
+            }
+
+    except Exception as e:
+        print("💥 ERROR:", str(e))
+        raise InternalServerError(f"Failed to fetch companies by role: {str(e)}")

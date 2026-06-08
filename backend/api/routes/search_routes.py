@@ -45,7 +45,7 @@ def read_jobs_by_location(location: str):
     """Get all jobs from a specific location"""
     return get_jobs_by_location(location)
 
-@router.get("/jobs/by-role")
-def read_jobs_by_role(role: str = Query(...)):
+@router.get("/jobs/by-role/{role}")
+def read_jobs_by_role(role: str):
     """Get all jobs for a given role (for analyze page)"""
     return get_jobs_by_role(role)

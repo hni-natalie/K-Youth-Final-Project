@@ -2,14 +2,11 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import re
 import glob
-import os
+import shutil
 import time
 import unicodedata
 from backend.pipeline.common.prompt_model import prompt_model
 from backend.pipeline.common.config import AI_MODEL, BATCH_SIZE
-
-# CONFIG
-# AI_MODEL = "llama3.1"
 
 def extract_job_blocks(html_content):
     soup = BeautifulSoup(html_content, "html.parser")
@@ -121,44 +118,75 @@ def process_batch_jobs(
 
         prompt = create_tech_job_prompt(batch_data)
         ai_res = prompt_model(ai_model, prompt)
+
+        print(f"\n🤖 Batch {i // batch_size + 1}")
         print(f"AI RES: {ai_res}")
 
         if "Error" in ai_res:
             print(f"⚠️ AI Service Error: {ai_res}")
             tech_list = [True] * len(batch)
         else:
-            tech_list = parse_ai_response(ai_res, len(batch))
+            tech_list = parse_ai_response(
+                ai_res,
+                len(batch)
+            )
 
         for is_tech, job in zip(tech_list, batch):
             job_id, title, block = job
 
-            # ❗ default behavior fallback (bootstrap pipeline)
+            # Track skipped non-tech jobs
+            if not is_tech:
+                non_tech_skipped += 1
+                skipped_job_titles.append(title)
+
+            # Default behavior (bootstrap pipeline)
             if filter_fn is None:
                 if not is_tech:
-                    non_tech_skipped += 1
                     continue
 
                 safe_title = sanitize_filename(title)
-                file_path = block_dir / f"{job_id}_{safe_title}.html"
+                file_path = (
+                    block_dir /
+                    f"{job_id}_{safe_title}.html"
+                )
 
-                with open(file_path, "w", encoding="utf-8") as f:
+                with open(
+                    file_path,
+                    "w",
+                    encoding="utf-8"
+                ) as f:
                     f.write(str(block))
 
                 saved_job_blocks += 1
                 continue
 
-            # ❗ incremental pipeline uses filter_fn
-            result = filter_fn(job_id, title, block, is_tech)
-
-            if not is_tech:
-                non_tech_skipped += 1
+            # Incremental pipeline
+            result = filter_fn(
+                job_id,
+                title,
+                block,
+                is_tech
+            )
 
             if result:
                 saved_job_blocks += 1
-                skipped_job_titles.append(title)
 
-    return saved_job_blocks, non_tech_skipped, skipped_job_titles
+    return (
+        saved_job_blocks,
+        non_tech_skipped,
+        skipped_job_titles
+    )
 
+def remove_input_folder(html_dir: Path):
+    """
+    Remove the entire job_sources folder after processing.
+    """
+    if html_dir.exists() and html_dir.is_dir():
+        try:
+            shutil.rmtree(html_dir)
+            print(f"🗑️ Removed input folder: {html_dir}")
+        except Exception as e:
+            print(f"⚠️ Failed to remove {html_dir}: {e}")
 
 def print_summary(
     total_job_blocks: int,
@@ -210,6 +238,11 @@ def main():
 
     saved_job_blocks, non_tech_skipped, skipped_job_titles = process_batch_jobs(job_queue, block_dir)
 
+    if skipped_job_titles:
+        print("\n🚫 Non-tech jobs skipped:")
+        for idx, title in enumerate(skipped_job_titles, 1):
+            print(f"  {idx}. {title}")
+
     elapsed = time.time() - start_time
     print_summary(
         total_job_blocks,
@@ -220,6 +253,8 @@ def main():
         skipped_job_titles,
         duplicate_ids
     )
+
+    remove_input_folder(html_dir)
 
 if __name__ == "__main__":
     main()

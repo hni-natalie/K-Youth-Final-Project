@@ -2,11 +2,10 @@ from pathlib import Path
 import sqlite3
 import glob
 import time
-import json
-
+import pandas as pd
+import shutil
 from backend.pipeline.bootstrap.extract_job_details import (
     extract_job_info,
-    sanitize_filename
 )
 
 # =========================
@@ -14,21 +13,24 @@ from backend.pipeline.bootstrap.extract_job_details import (
 # =========================
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 
-NEW_BLOCK_DIR = project_root / "data" / "job_blocks" / "new"
-NEW_JSON_DIR = project_root / "data" / "job_data" / "new"
+NEW_BLOCK_DIR = project_root / "data" / "job_blocks"
+CSV_PATH = project_root / "data" / "job_listings.csv"
 DB_PATH = project_root / "data" / "jobs_database.db"
 
-NEW_JSON_DIR.mkdir(parents=True, exist_ok=True)
-
 
 # =========================
-# CLEAN (DEV ONLY)
+# CLEAN (optional dev use)
 # =========================
-def clean_new_json_folder():
-    if NEW_JSON_DIR.exists():
-        for f in NEW_JSON_DIR.glob("*.json"):
-            f.unlink()
-    print("🧹 Cleaned job_data/new")
+def clean_csv_duplicates():
+    if CSV_PATH.exists():
+        df = pd.read_csv(CSV_PATH)
+
+        before = len(df)
+        df = df.drop_duplicates(subset=["job_id"])
+
+        df.to_csv(CSV_PATH, index=False, encoding="utf-8-sig")
+
+        print(f"🧹 Cleaned CSV duplicates | Before: {before} | After: {len(df)}")
 
 
 # =========================
@@ -46,12 +48,32 @@ def get_existing_job_ids():
 
 
 # =========================
-# PROCESS NEW JOB BLOCKS
+# APPEND TO CSV
+# =========================
+def append_to_csv(rows: list[dict]):
+    if not rows:
+        return
+
+    df_new = pd.DataFrame(rows)
+
+    # If CSV exists → append
+    if CSV_PATH.exists():
+        df_old = pd.read_csv(CSV_PATH)
+        df = pd.concat([df_old, df_new], ignore_index=True)
+        df = df.drop_duplicates(subset=["job_id"])
+    else:
+        df = df_new
+
+    df.to_csv(CSV_PATH, index=False, encoding="utf-8-sig")
+
+
+# =========================
+# PROCESS JOB BLOCKS
 # =========================
 def process_new_jobs(existing_job_ids):
     files = glob.glob(str(NEW_BLOCK_DIR / "*.html"))
 
-    saved = 0
+    rows = []
     skipped = 0
     failed = 0
 
@@ -62,25 +84,21 @@ def process_new_jobs(existing_job_ids):
 
             job = extract_job_info(html)
 
-            # skip if already in DB
+            # skip duplicates
             if job.job_id in existing_job_ids:
                 skipped += 1
                 continue
 
-            safe_title = sanitize_filename(job.title)
-            filename = f"{job.job_id}_{safe_title}.json"
-
-            with open(NEW_JSON_DIR / filename, "w", encoding="utf-8") as f:
-                json.dump(job.model_dump(), f, indent=4, ensure_ascii=False)
-
-            print(f"💾 NEW JOB DATA: {job.title}")
-            saved += 1
+            rows.append(job.model_dump())
+            print(f"💾 NEW JOB: {job.title}")
 
         except Exception as e:
             print(f"❌ Failed: {file} | {e}")
             failed += 1
 
-    return saved, skipped, failed
+    append_to_csv(rows)
+
+    return len(rows), skipped, failed
 
 
 # =========================
@@ -89,21 +107,29 @@ def process_new_jobs(existing_job_ids):
 def main():
     start = time.time()
 
-    clean_new_json_folder()
-
     existing_job_ids = get_existing_job_ids()
-    print(f"📂 Loaded {len(existing_job_ids)} existing jobs")
+    print(f"📂 Loaded {len(existing_job_ids)} jobs from DB")
 
     saved, skipped, failed = process_new_jobs(existing_job_ids)
+
+    # optional cleanup
+    clean_csv_duplicates()
 
     print("\n📊 SUMMARY")
     print(
         f"Saved: {saved} | "
-        f"Skipped (existing): {skipped} | "
+        f"Skipped: {skipped} | "
         f"Failed: {failed} | "
         f"Time: {time.time() - start:.2f}s"
     )
 
+    print("\n🧹 Cleaning job_blocks folder...")
+
+    try:
+        shutil.rmtree(NEW_BLOCK_DIR)
+        print(f"🗑️ Removed folder: {NEW_BLOCK_DIR}")
+    except Exception as e:
+        print(f"⚠️ Failed to remove job_blocks: {e}")
 
 if __name__ == "__main__":
     main()

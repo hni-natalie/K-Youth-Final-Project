@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     CHAT_MODEL: str = "gemini-2.5-flash"
     CHAT_MODEL_FALLBACK: str = "gemini-2.0-flash"
 
+    backend_url: str | None = None
+    google_api_key: str | None = None
+
     class Config:
         env_file = ".env"
 

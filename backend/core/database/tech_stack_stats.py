@@ -1,166 +1,71 @@
-import json
 from collections import Counter
 from backend.utils.error_handlers import InternalServerError
 from backend.core.database.connection import get_db
-from backend.pipeline.common.prompt_model import prompt_model
-
-MODEL_NAME = "gemini-3.1-flash-lite"
-BATCH_SIZE = 30
 
 
 # =========================
-# DB FETCH
+# FETCH NORMALIZED STACK
 # =========================
-def fetch_tech_stack() -> list[str]:
+def fetch_normalized_tech_stack(role: str | None = None) -> list[str]:
     with get_db() as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT tech_stack FROM jobs")
+
+        if role:
+            cursor.execute("""
+                SELECT normalized_tech_stack
+                FROM jobs
+                WHERE role = ?
+            """, (role,))
+        else:
+            cursor.execute("""
+                SELECT normalized_tech_stack
+                FROM jobs
+                WHERE normalized_tech_stack IS NOT NULL
+            """)
+
         rows = cursor.fetchall()
 
-        if not rows:
-            raise InternalServerError("No tech stack data found")
+    if not rows:
+        raise InternalServerError("No normalized tech stack data found")
 
-        data = [r["tech_stack"] for r in rows if r["tech_stack"]]
-        print(f"📊 DB rows: {len(data)}")
-        return data
+    return [r["normalized_tech_stack"] for r in rows if r["normalized_tech_stack"]]
 
 
 # =========================
-# SPLIT SKILLS
+# SPLIT STACK
 # =========================
-def split_and_normalize_skills(rows: list[str]) -> list[str]:
+def split_normalized_stack(rows: list[str]) -> list[str]:
     skills = []
 
-    for i, row in enumerate(rows, start=1):
-        parts = row.split(",")
-        for p in parts:
-            s = p.strip().lower()
-            if s:
-                skills.append(s)
+    for row in rows:
+        for s in row.split(","):
+            cleaned = s.strip().lower()
+            if cleaned:
+                skills.append(cleaned)
 
-        print(f"🔹 Row {i}: {len(parts)} skills")
-
-    print(f"📊 Total raw skills: {len(skills)}")
     return skills
 
 
 # =========================
-# PROMPT
+# MAIN STATS
 # =========================
-def build_skill_filter_prompt(skills: list[str]) -> str:
-    skills_text = "\n".join(f"- {s}" for s in skills)
-
-    return f"""
-You are a strict skill normalization system.
-
-Return ONLY valid JSON ARRAY.
-
-Each item must follow:
-{{
-  "skill": "original_skill",
-  "normalized": "clean_skill_name or null"
-}}
-
-Rules:
-- Remove non-tech skills
-- Normalize synonyms (ai → artificial intelligence)
-- No markdown
-- No explanation
-
-Skills:
-{skills_text}
-"""
-
-
-# =========================
-# LLM BATCH PROCESS
-# =========================
-def filter_skills_with_llm_batch(skills: list[str]) -> list[dict]:
-    results = []
-
-    for start in range(0, len(skills), BATCH_SIZE):
-        batch = skills[start:start + BATCH_SIZE]
-
-        print(f"\n🤖 Batch {start // BATCH_SIZE + 1}: {len(batch)} skills")
-
-        prompt = build_skill_filter_prompt(batch)
-        response = prompt_model(MODEL_NAME, prompt).strip()
-
-        print(f"📥 Raw response preview:\n{response[:200]}...\n")
-
-        try:
-            parsed = json.loads(response)
-
-            if not isinstance(parsed, list):
-                raise ValueError("Expected list from LLM")
-
-            results.extend(parsed)
-            print(f"✅ Batch parsed: {len(parsed)} items")
-
-        except Exception as e:
-            print("❌ Failed batch response")
-            print(response)
-            raise InternalServerError(f"Batch parsing failed: {str(e)}")
-
-    return results
-
-
-# =========================
-# MAIN PIPELINE
-# =========================
-def get_tech_stack_stats():
+def get_tech_stack_stats(role: str | None = None):
     try:
-        # Step 1
-        rows = fetch_tech_stack()
+        rows = fetch_normalized_tech_stack(role)
 
-        # Step 2
-        raw_skills = split_and_normalize_skills(rows)
+        raw_skills = split_normalized_stack(rows)
 
-        # Step 3
-        unique_skills = list(set(raw_skills))
-        print(f"\n📦 Unique skills: {len(unique_skills)}")
+        counter = Counter(raw_skills)
 
-        # Step 4
-        llm_results = filter_skills_with_llm_batch(unique_skills)
-
-        # Step 5: build mapping
-        skill_map = {}
-        for item in llm_results:
-            raw = item.get("skill")
-            norm = item.get("normalized")
-
-            if raw and norm:
-                skill_map[raw] = norm
-
-        print(f"\n🔗 Mapped skills: {len(skill_map)}")
-
-        # Step 6: count
-        counter = Counter()
-        ignored = []
-
-        for s in raw_skills:
-            if s in skill_map:
-                counter[skill_map[s]] += 1
-            else:
-                ignored.append(s)
-
-        print(f"\n📊 Valid skills: {len(counter)}")
-        print(f"⚠️ Ignored: {len(ignored)}")
-
-        # Step 7: output
         result = dict(counter.most_common())
-
-        print("\n🎯 FINAL RESULT")
-        for k, v in result.items():
-            print(f"{k}: {v}")
 
         return {
             "message": "Tech stack statistics retrieved successfully",
             "data": {
+                "role": role,
                 "top_skills": result
             }
         }
 
     except Exception as e:
-        print("💥 ERROR:", str(e))
         raise InternalServerError(str(e))

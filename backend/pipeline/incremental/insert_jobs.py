@@ -1,18 +1,19 @@
 from pathlib import Path
 import sqlite3
-import glob
-import json
 import time
+import pandas as pd
 
 from backend.pipeline.common.extract_role import run_role_extraction
 from backend.pipeline.common.extract_tech_stack import tag_data
+from backend.pipeline.bootstrap.load_data_into_db import insert_job
+from backend.pipeline.common.normalised_tech_stack import run_tech_stack_normalization_pipeline
 
 # =========================
 # PATHS
 # =========================
 project_root = Path(__file__).resolve().parent.parent.parent.parent
 
-NEW_JSON_DIR = project_root / "data" / "job_data" / "new"
+CSV_PATH = project_root / "data" / "job_listings.csv"
 DB_PATH = project_root / "data" / "jobs_database.db"
 
 
@@ -33,59 +34,31 @@ def get_existing_job_ids(cursor):
 
 
 # =========================
-# INSERT JOB
-# =========================
-def insert_job(cursor, job):
-    cursor.execute("""
-        INSERT INTO jobs (
-            job_id,
-            title,
-            job_url,
-            company,
-            location,
-            salary,
-            posted_date,
-            actual_posted_date,
-            job_description
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        job["job_id"],
-        job["title"],
-        job["job_url"],
-        job["company"],
-        job["location"],
-        job["salary"],
-        job["posted_date"],
-        job["actual_posted_date"],
-        job["job_description"]
-    ))
-
-
-# =========================
-# MAIN PROCESS
+# MAIN PROCESS (CSV VERSION)
 # =========================
 def main():
     start = time.time()
+
+    if not CSV_PATH.exists():
+        print(f"❌ CSV not found: {CSV_PATH}")
+        return 0
+
+    df = pd.read_csv(CSV_PATH)
 
     conn, cursor = get_connection()
 
     existing_ids = get_existing_job_ids(cursor)
     print(f"📂 Loaded {len(existing_ids)} existing jobs from DB")
-
-    files = glob.glob(str(NEW_JSON_DIR / "*.json"))
+    print(f"📄 Loaded {len(df)} rows from CSV")
 
     inserted = 0
     skipped = 0
     failed = 0
 
-    for file in files:
+    for _, job in df.iterrows():
         try:
-            with open(file, "r", encoding="utf-8") as f:
-                job = json.load(f)
-
             job_id = str(job["job_id"])
 
-            # skip duplicates
             if job_id in existing_ids:
                 skipped += 1
                 continue
@@ -97,7 +70,7 @@ def main():
             inserted += 1
 
         except Exception as e:
-            print(f"❌ Failed {file}: {e}")
+            print(f"❌ Failed job_id={job.get('job_id')} | {e}")
             failed += 1
 
     conn.commit()
@@ -113,10 +86,23 @@ def main():
 
     return inserted
 
+
 def pipeline():
     inserted_count = main()
+
+    if inserted_count == 0:
+        print("\n⚠️ No new jobs inserted.")
+        print("⏭ Skipping enrichment pipeline.")
+        return 0
+
+    print("\n🚀 Running role extraction")
     run_role_extraction()
+
+    print("\n🚀 Running tech stack extraction")
     tag_data(DB_PATH)
+
+    print("\n🚀 Running tech stack normalization")
+    run_tech_stack_normalization_pipeline()
 
     return inserted_count
 

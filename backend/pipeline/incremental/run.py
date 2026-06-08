@@ -1,9 +1,8 @@
-import sqlite3
 import time
 from pathlib import Path
 
 from backend.pipeline.incremental.fetch_new_jobs import fetch_new_jobs
-from backend.pipeline.incremental.compare_exisitng import main as compare_existing
+from backend.pipeline.incremental.compare_existing import main as compare_existing
 from backend.pipeline.incremental.add_jobs_data import main as add_jobs_data
 from backend.pipeline.incremental.insert_jobs import pipeline as insert_jobs
 

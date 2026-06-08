@@ -82,21 +82,62 @@ def get_locations_with_stats():
 
 
 def get_locations_by_role(role: str):
-    """Return distinct normalized locations for jobs with the given role."""
+    """Return normalized locations with appearance count for a role."""
     try:
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT location FROM jobs WHERE role = ? AND location IS NOT NULL",
+                '''
+                SELECT location
+                FROM jobs
+                WHERE role = ?
+                AND location IS NOT NULL
+                ''',
                 (role,),
             )
+
             rows = cursor.fetchall()
+
         if not rows:
-            return {"message": "No locations found", "data": {"locations": []}}
-        normalized = {normalize_location(row["location"]) for row in rows}
+            return {
+                "message": "No locations found",
+                "data": {"locations": []}
+            }
+
+        # normalize locations
+        normalized = [
+            normalize_location(row["location"])
+            for row in rows
+            if row["location"]
+        ]
+
+        # count frequency
+        counter = Counter(normalized)
+
+        # format response
+        stats_list = sorted(
+            [
+                {
+                    "location": location,
+                    "count": count
+                }
+                for location, count in counter.items()
+            ],
+            key=lambda x: x["count"],
+            reverse=True
+        )
+
         return {
             "message": "Locations retrieved successfully",
-            "data": {"locations": sorted(normalized)},
+            "data": {
+                "locations": stats_list,
+                "total_locations": len(counter),
+                "total_records": sum(counter.values())
+            }
         }
+
     except Exception as e:
-        raise InternalServerError(f"Failed to fetch locations by role: {str(e)}")
+        raise InternalServerError(
+            f"Failed to fetch locations by role: {str(e)}"
+        )
+
